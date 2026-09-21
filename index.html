@@ -279,6 +279,15 @@
   body.night #night{display:block}
   body.night #c,body.night #skycanvas,body.night #flarecanvas{filter:saturate(.15) brightness(.85)}
   #trk-dso{max-height:260px;overflow:auto}
+  #tel-ctl{display:flex;gap:6px;margin:0 0 6px}
+  #tel-ctl input{flex:1 1 auto;font-size:10.5px;padding:3px 6px;width:auto}
+  #tel-ctl button{font-size:10.5px;padding:3px 8px}
+  #tel-status .r{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid #101827}
+  #tel-status .r b{color:#dfe6ff;font-weight:400}
+  #tel-status button{font-size:10.5px;padding:3px 8px;margin:0 3px 0 0}
+  #tel-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#3f5670;margin-left:6px}
+  #tel-dot.on{background:#4fd18b}
+  #tel-dot.err{background:#ff6b6b}
   #trk-objctl{display:flex;gap:6px;margin:0 0 6px}
   #trk-objctl select{flex:1 1 auto;font-size:10.5px;padding:3px 4px;background:#0d1626;color:#c9d6ea;border:1px solid #22334a;border-radius:6px}
   #trk-objctl input{flex:1 1 auto;font-size:10.5px;padding:3px 6px;width:auto}
@@ -529,6 +538,12 @@
     <h3>JUPITER'S MOONS</h3><canvas id="trk-jup" width="290" height="80"></canvas>
     <h3>SATURN'S RINGS</h3><canvas id="trk-sat" width="290" height="96"></canvas>
     <div id="trk-planetinfo"></div>
+    <h3>TELESCOPE <span id="tel-dot"></span></h3>
+    <div id="tel-ctl">
+      <input id="tel-host" placeholder="Alpaca host:port" autocomplete="off">
+      <button id="tel-connect">Connect</button>
+    </div>
+    <div id="tel-status"></div>
     <h3>OBJECTS</h3>
     <div id="trk-objctl">
       <select id="trk-list">
@@ -620,6 +635,11 @@
         their real orbital periods) and <b>Saturn's rings</b> with their true
         opening angle and Titan. <b>Night mode</b> (🔴) dims the whole interface
         to red.</p>
+    <p><b>Telescope (🧭 Sky tracker → Telescope):</b> connect to an
+        <b>ASCOM Alpaca</b> mount on your own network by entering its address
+        (host:port), then <b>GoTo</b> the selected object or <b>Sync</b> on it,
+        with abort and park. The app talks only to the mount you enter; nothing
+        is sent anywhere else, and no internet is required.</p>
     <p><b>Zodiac systems:</b> the chart can be drawn in the <em>tropical</em>
         zodiac (equinox of date), in the <em>sidereal</em> zodiac with a choice
         of ayanamsa — Lahiri, Fagan–Bradley, Krishnamurti, B. V. Raman or
@@ -4252,6 +4272,94 @@
   function saveFavs() { try { localStorage.setItem("pe.favs", JSON.stringify(Object.keys(FAV))); } catch (e) {} }
   var FAV = loadFavs();
   function toggleFav(n) { if (FAV[n]) delete FAV[n]; else FAV[n] = 1; saveFavs(); trkDirty = true; }
+  // ---- ASCOM Alpaca telescope control (HTTP/JSON over the local network) ----
+  var TEL = { host: "", dev: 0, connected: false, name: "", busy: false, err: "",
+    ra: null, dec: null, alt: null, az: null, slewing: false, tracking: null, timer: null };
+  try { TEL.host = localStorage.getItem("pe.tel.host") || ""; } catch (e) {}
+  function telBase() { return "http://" + TEL.host + "/api/v1/telescope/" + TEL.dev + "/"; }
+  function telCall(method, params) {
+    var q = [];
+    for (var k in (params || {})) q.push(encodeURIComponent(k) + "=" + encodeURIComponent(params[k]));
+    var url = telBase() + method + ".json" + (q.length ? "?" + q.join("&") : "");
+    return fetch(url, { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.ErrorNumber) throw new Error(d.ErrorMessage || ("Alpaca error " + d.ErrorNumber));
+      return d ? d.Value : null;
+    });
+  }
+  function trow(k, v) { return "<div class='r'><span>" + k + "</span><b>" + v + "</b></div>"; }
+  function fmtRA(h) {
+    if (h == null || isNaN(h)) return "—";
+    var hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+    if (mm === 60) { hh++; mm = 0; }
+    return ("0" + hh).slice(-2) + "h " + ("0" + mm).slice(-2) + "m";
+  }
+  function telRender(note) {
+    var el = document.getElementById("tel-status"); if (!el) return;
+    var dot = document.getElementById("tel-dot");
+    if (dot) dot.className = TEL.err ? "err" : (TEL.connected ? "on" : "");
+    var o = TRK.sel, html = "";
+    if (TEL.err) html += "<div class='r'><span>Error</span><b style='color:#ff8f6b'>" + TEL.err + "</b></div>";
+    if (TEL.connected) {
+      html += trow("Device", TEL.name) +
+        trow("RA · Dec", fmtRA(TEL.ra) + " · " + (TEL.dec != null ? TEL.dec.toFixed(2) + "°" : "—")) +
+        trow("Alt · Az", (TEL.alt != null ? TEL.alt.toFixed(1) + "°" : "—") + " · " + (TEL.az != null ? TEL.az.toFixed(0) + "°" : "—")) +
+        trow("State", TEL.slewing ? "slewing…" : (TEL.tracking ? "tracking" : "idle")) +
+        trow("Target", o || "— tap an object");
+      html += "<div style='margin-top:6px'><button id='tel-goto'>GoTo</button>" +
+        "<button id='tel-sync'>Sync</button><button id='tel-abort'>Abort</button>" +
+        "<button id='tel-park'>Park</button><button id='tel-disc'>Disconnect</button></div>";
+    } else {
+      html += "<div class='fnote'>" + (note || "Enter your mount's ASCOM Alpaca address (host:port) and connect to slew to the selected object.") + "</div>";
+    }
+    el.innerHTML = html;
+    var on = function (id, fn) { var b = document.getElementById(id); if (b) b.addEventListener("click", fn); };
+    on("tel-goto", function () { telGoto(false); });
+    on("tel-sync", function () { telGoto(true); });
+    on("tel-abort", function () { telCall("abortslew").then(telPoll).catch(function (e) { TEL.err = String(e.message || e); telRender(); }); });
+    on("tel-park", function () { telCall("park").then(telPoll).catch(function (e) { TEL.err = String(e.message || e); telRender(); }); });
+    on("tel-disc", function () {
+      telCall("connected", { Connected: "false" }).catch(function () {});
+      TEL.connected = false; TEL.name = "";
+      if (TEL.timer) { clearInterval(TEL.timer); TEL.timer = null; }
+      telRender();
+    });
+  }
+  function telPoll() {
+    if (!TEL.connected) return;
+    Promise.all([
+      telCall("rightascension"), telCall("declination"),
+      telCall("altitude").catch(function () { return null; }),
+      telCall("azimuth").catch(function () { return null; }),
+      telCall("slewing").catch(function () { return null; }),
+      telCall("tracking").catch(function () { return null; })
+    ]).then(function (v) {
+      TEL.ra = v[0]; TEL.dec = v[1]; TEL.alt = v[2]; TEL.az = v[3];
+      TEL.slewing = !!v[4]; TEL.tracking = v[5];
+      TEL.err = ""; telRender();
+    }).catch(function (e) { TEL.connected = false; TEL.err = String(e.message || e); telRender(); });
+  }
+  function telStartPoll() { if (!TEL.timer) TEL.timer = setInterval(telPoll, 1500); telPoll(); }
+  function telConnect() {
+    var h = (document.getElementById("tel-host").value || "").trim();
+    if (!h) return;
+    TEL.host = h.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    try { localStorage.setItem("pe.tel.host", TEL.host); } catch (e) {}
+    TEL.err = ""; telRender("Connecting to " + TEL.host + "…");
+    telCall("connected", { Connected: "true" })
+      .then(function () { return telCall("name"); })
+      .then(function (n) { TEL.name = n || "Telescope"; TEL.connected = true; return telCall("tracking", { Tracking: "true" }); })
+      .then(function () { telStartPoll(); })
+      .catch(function (e) { TEL.connected = false; TEL.err = String(e.message || e); telRender(); });
+  }
+  function telGoto(sync) {
+    var o = null; (window.DEEPSKY || []).forEach(function (x) { if (x.n === TRK.sel) o = x; });
+    if (!o) { TEL.err = "Select an object in the list first."; telRender(); return; }
+    TEL.err = "";
+    telCall(sync ? "synctocoordinates" : "slewtocoordinatesasync",
+      { RightAscension: (o.ra / 15).toFixed(6), Declination: o.dec.toFixed(6) })
+      .then(function () { telRender((sync ? "Synced to " : "Slewing to ") + o.n); return telPoll(); })
+      .catch(function (e) { TEL.err = String(e.message || e); telRender(); });
+  }
   var trkStatic = document.createElement("canvas"), trkKey = "", trkData = null;
   var DSO_COLOR = {
     "galaxy": "#ff9ad0", "open cluster": "#8fd7ff", "globular cluster": "#ffd257",
@@ -4877,6 +4985,12 @@
   document.getElementById("trk-list").addEventListener("change", function () {
     TRK.list = this.value; trkDirty = true;
   });
+  document.getElementById("tel-connect").addEventListener("click", telConnect);
+  document.getElementById("tel-host").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") telConnect();
+  });
+  document.getElementById("tel-host").value = TEL.host || "";
+  telRender();
   document.getElementById("nightbtn").addEventListener("click", function () {
     SET.night = !SET.night; saveSettings(); applyNight();
   });
@@ -5491,6 +5605,9 @@
     SATURN: function (jd) { var s = saturnTilt(jd || sysJD()); return { B: s.B }; },
     FAVS: function () { return Object.keys(FAV); },
     TOGGLEFAV: function (n) { toggleFav(n); return Object.keys(FAV); },
+    TELSTATE: function () { return { host: TEL.host, connected: TEL.connected, name: TEL.name,
+      ra: TEL.ra, dec: TEL.dec, alt: TEL.alt, az: TEL.az, slewing: TEL.slewing, err: TEL.err }; },
+    TELGOTO: function (sync) { telGoto(sync); },
     SWLIVE: function () { return SWLIVE; },
     REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
