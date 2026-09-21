@@ -17,7 +17,7 @@
 <style>
   html,body{margin:0;height:100%;background:#04040c;color:#dfe6ff;
     font-family:ui-monospace,"SFMono-Regular","JetBrains Mono",Menlo,Consolas,monospace;overflow:hidden}
-  canvas{display:block;width:100vw;height:100vh}
+  #c{display:block;width:100vw;height:100vh}
   #nav{position:fixed;top:0;left:0;right:0;height:46px;display:flex;align-items:center;gap:10px;
     padding:0 14px;background:rgba(4,4,12,.72);backdrop-filter:blur(12px);
     border-bottom:1px solid #1a2233;z-index:20}
@@ -311,6 +311,15 @@
   #almgrid .day canvas{display:block;margin:2px 0}
   #almgrid .day .ev{color:#4fd18b}
   #almfoot{max-width:1120px;margin:12px auto 0;color:#61748e;font-size:10.5px;line-height:1.7}
+  #almevents{max-width:1120px;margin:16px auto 0}
+  #almevents h3{color:#35d0e0;font-size:12px;letter-spacing:1px;margin:0 0 8px}
+  #almevents .ev{display:flex;gap:12px;align-items:baseline;padding:5px 0;border-bottom:1px solid #16202f;font-size:12.5px}
+  #almevents .ev .day{color:#ffd257;min-width:64px;font-variant-numeric:tabular-nums}
+  #almevents .ev.solar .txt{color:#ffd257}
+  #almevents .ev.lunar .txt{color:#bcd2ff}
+  #almevents .ev.meteor .txt{color:#9fe08f}
+  #almevents .ev .txt{color:#c9d6ea}
+  #almevents .none{color:#61748e;font-size:11.5px}
   #almfoot b{color:#93a7c6}
   #fps{position:fixed;right:12px;bottom:12px;z-index:22;font-size:11px;color:#35d0e0;
     background:rgba(4,4,12,.7);padding:3px 8px;border-radius:6px;display:none}
@@ -524,6 +533,7 @@
     <span class="loc" id="alm-loc"></span>
   </div>
   <div id="almgrid"></div>
+  <div id="almevents"></div>
   <div id="almfoot"></div>
 </div>
 <div id="fps"></div>
@@ -594,8 +604,12 @@
     <p><b>Almanac (🗓 in the system bar):</b> a month calendar for your
         location with sunrise, sunset, civil twilight, moonrise, moonset, day
         length and the moon's phase for every day, the season dates (equinoxes
-        and solstices) and the traditional name of the month's full moon. All
-        computed from the same offline ephemeris.</p>
+        and solstices) and the traditional name of the month's full moon. Below
+        the calendar is a <b>Sky events</b> list for the month: solar and lunar
+        <b>eclipses</b>, planet <b>oppositions</b>, solar conjunctions and
+        greatest elongations, close <b>planet conjunctions</b> and the
+        <b>meteor showers</b> peaking that month. All computed from the same
+        offline ephemeris (eclipse dates are approximate).</p>
     <p><b>Codex (📜 in the bar):</b> every world opens as a historical codex
         page — a parchment that unfurls around the planet while it turns slowly
         on its dais, the ancient symbol as a watermark, and sections on
@@ -773,6 +787,7 @@
 <script src="stars.js"></script>
 <script src="constellations.js"></script>
 <script src="deepsky.js"></script>
+<script src="meteors.js"></script>
 <script src="spaceweather.js"></script>
 <script>
 (function () {
@@ -3939,6 +3954,121 @@
   }
   var FULLMOON_NAMES = ["Wolf", "Snow", "Worm", "Pink", "Flower", "Strawberry",
     "Buck", "Sturgeon", "Harvest", "Hunter's", "Beaver", "Cold"];
+
+  // ---- sky events: eclipses, planetary events, meteor showers ----
+  var AU_KM = 149597870.7, R_EARTH = 6378.14, R_MOON = 1737.4, R_SUN = 696000;
+  var SKY_PLANETS = ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"];
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  // Geocentric Sun and Moon ecliptic positions in AU (fresh vectors).
+  function sunMoonVecs(jd) {
+    var S = new THREE.Vector3(), M = new THREE.Vector3();
+    planetHelio("earth", jd, S); S.negate();
+    moonGeo(jd, M);
+    return { s: S, m: M };
+  }
+  // Solar eclipse condition: distance from Earth's centre to the Moon's shadow
+  // axis vs the penumbra/umbra radii there. Returns a type or null.
+  function solarEclipseInfo(jd) {
+    var v = sunMoonVecs(jd), S = v.s, M = v.m;
+    var sSun = Math.asin(R_SUN / (S.length() * AU_KM)), sMoon = Math.asin(R_MOON / (M.length() * AU_KM));
+    var k = AU_KM / R_EARTH;
+    var D = M.clone().multiplyScalar(k).sub(S.clone().multiplyScalar(k)).normalize();
+    var Me = M.clone().multiplyScalar(k);
+    var t = D.dot(Me.clone().negate());
+    var P = Me.clone().add(D.multiplyScalar(t));
+    var d = P.length(), L = P.sub(Me).length();
+    var penR = (sSun + sMoon) * L, umbR = Math.abs(sMoon - sSun) * L;
+    return { d: d, penR: penR, umbR: umbR, sSun: sSun, sMoon: sMoon };
+  }
+  function solarEclipse(jd) {
+    var e = solarEclipseInfo(jd);
+    if (e.d >= 1 + e.penR) return null;
+    // The low-precision lunar theory is not accurate enough to separate a
+    // grazing total/annular from a deep partial, so only commit when clear.
+    if (e.d < 0.9) return e.sMoon > e.sSun ? "total" : "annular";
+    if (e.d > 1.15) return "partial";
+    return "solar";
+  }
+  function lunarEclipse(jd) {
+    var v = sunMoonVecs(jd), S = v.s, M = v.m;
+    var sSun = Math.asin(R_SUN / (S.length() * AU_KM));
+    var Me = M.clone().multiplyScalar(AU_KM / R_EARTH), D = Me.length();
+    var A = S.clone().normalize().negate();
+    var perp = Me.sub(A.multiplyScalar(Me.dot(A))).length();
+    var sMoonRE = R_MOON / R_EARTH, umbR = 1 - D * Math.tan(sSun), penR = 1 + D * Math.tan(sSun);
+    if (perp < umbR - sMoonRE) return "total";
+    if (perp < umbR + sMoonRE) return "partial";
+    if (perp < penR + sMoonRE) return "penumbral";
+    return null;
+  }
+  var _eclCache = {};
+  function eclipsesFrom(year) {
+    if (_eclCache[year]) return _eclCache[year];
+    var from = Date.UTC(year, 0, 1) / 86400000 + 2440587.5;
+    var res = [], prev = norm360(geoLon("moon", from) - geoLon("sun", from));
+    for (var t = 1; t <= 732 && res.length < 8; t++) {
+      var j = from + t * 0.5, cur = norm360(geoLon("moon", j) - geoLon("sun", j));
+      var tg = [[0, true], [180, false]];
+      for (var q = 0; q < 2; q++) {
+        if (res.length >= 8) break;
+        var a = norm180(prev - tg[q][0]), b = norm180(cur - tg[q][0]);
+        if (a <= 0 && b > 0 && (b - a) < 30) {
+          var f = a / (a - b), jd = from + (t - 1) * 0.5 + f * 0.5;
+          var kind = tg[q][1] ? solarEclipse(jd) : lunarEclipse(jd);
+          if (kind) res.push({ jd: jd, solar: tg[q][1], kind: kind });
+        }
+      }
+      prev = cur;
+    }
+    res.sort(function (x, y) { return x.jd - y.jd; });
+    _eclCache[year] = res;
+    return res;
+  }
+  function elongOf(id, jd) { return norm180(geoLon(id, jd) - geoLon("sun", jd)); }
+  function sepOf(a, b, jd) { return Math.abs(norm180(geoLon(a, jd) - geoLon(b, jd))); }
+  function skyEventsMonth(y, m) {
+    var ev = [], start = Date.UTC(y, m, 1) / 86400000 + 2440587.5;
+    var end = Date.UTC(y, m + 1, 1) / 86400000 + 2440587.5;
+    function add(jd, text) {
+      var d = new Date((jd - 2440587.5) * 86400000);
+      if (d.getUTCFullYear() !== y || d.getUTCMonth() !== m) return;
+      ev.push({ day: d.getUTCDate(), jd: jd, text: text });
+    }
+    [y - 1, y, y + 1].forEach(function (yy) {
+      eclipsesFrom(yy).forEach(function (e) {
+        var label = e.solar ? ("Solar eclipse" + (e.kind === "solar" ? "" : " — " + e.kind))
+          : ("Lunar eclipse — " + e.kind);
+        add(e.jd, label);
+      });
+    });
+    SKY_PLANETS.forEach(function (id) {
+      for (var jd = start - 2; jd < end + 2; jd += 1) {
+        var e0 = elongOf(id, jd - 1), e1 = elongOf(id, jd), e2 = elongOf(id, jd + 1);
+        if (e0 <= 0 && e1 > 0 && Math.abs(e0) < 30 && Math.abs(e1) < 30) add(jd, cap(id) + " in conjunction with the Sun");
+        else if (e0 >= 0 && e1 < 0 && Math.abs(e0) < 30 && Math.abs(e1) < 30) add(jd, cap(id) + " in conjunction with the Sun");
+        if ((e0 > 160 && e1 < -160) || (e0 < -160 && e1 > 160)) add(jd, cap(id) + " at opposition — brightest and all night");
+        if ((id === "mercury" || id === "venus") && Math.abs(e1) > Math.abs(e0) && Math.abs(e1) >= Math.abs(e2))
+          add(jd, cap(id) + " at greatest " + (e1 > 0 ? "eastern" : "western") + " elongation (" + Math.abs(e1).toFixed(0) + "°)");
+      }
+    });
+    for (var a = 0; a < SKY_PLANETS.length; a++) for (var b = a + 1; b < SKY_PLANETS.length; b++) {
+      for (var jd = start; jd < end; jd += 1) {
+        var s0 = sepOf(SKY_PLANETS[a], SKY_PLANETS[b], jd - 1);
+        var s1 = sepOf(SKY_PLANETS[a], SKY_PLANETS[b], jd);
+        var s2 = sepOf(SKY_PLANETS[a], SKY_PLANETS[b], jd + 1);
+        if (s1 <= s0 && s1 < s2 && s1 < 5)
+          add(jd, cap(SKY_PLANETS[a]) + " and " + cap(SKY_PLANETS[b]) + " in conjunction (" + s1.toFixed(1) + "° apart)");
+      }
+    }
+    (window.METEORS || []).forEach(function (sh) {
+      if (sh.m === m + 1)
+        add(Date.UTC(y, m, sh.d) / 86400000 + 2440587.5,
+          sh.n + " meteor shower peaks — ZHR " + sh.zhr + (sh.p ? " · " + sh.p : ""));
+    });
+    ev.sort(function (x, y2) { return x.jd - y2.jd; });
+    return ev;
+  }
+
   function drawPhaseMini(cv, phase) {
     var S = cv.width, r = S / 2 - 0.5, c = S / 2;
     var g = cv.getContext("2d");
@@ -4013,10 +4143,22 @@
       var d = new Date((e.jd - 2440587.5) * 86400000);
       return "<b>" + e.name + "</b> " + fmtDate(d.getTime()) + " " + hm(locH(((e.jd + 0.5) % 1) * 24, tz));
     }).join(" &nbsp;·&nbsp; ");
+    // sky events this month
+    var events = skyEventsMonth(y, m);
+    var evHtml = events.map(function (e) {
+      var cls = e.text.indexOf("eclipse") >= 0 ? (e.text.indexOf("Solar") === 0 ? "solar" : "lunar")
+        : (e.text.indexOf("meteor") >= 0 ? "meteor" : "");
+      return "<div class='ev " + cls + "'><span class='day'>" + MON[m].slice(0, 3) + " " + e.day +
+        "</span><span class='txt'>" + e.text + "</span></div>";
+    }).join("");
+    document.getElementById("almevents").innerHTML =
+      "<h3>SKY EVENTS — " + MON[m].toUpperCase() + " " + y + "</h3>" +
+      (evHtml || "<div class='none'>No major sky events this month.</div>");
     document.getElementById("almfoot").innerHTML =
       seasonLines + '<br><b>Full moon this month</b> the ' + FULLMOON_NAMES[m] +
       ' Moon &nbsp;·&nbsp; twilight is civil (Sun 6° below the horizon) &nbsp;·&nbsp; ' +
-      'rise/set use the standard refracted horizon; times can differ a few minutes from other almanacs.';
+      'rise/set use the standard refracted horizon; times can differ a few minutes from other almanacs ' +
+      '&nbsp;·&nbsp; eclipse dates are computed from our own ephemeris and are approximate — check a local almanac for the path.';
   }
   function enterAlmanac() {
     if (SYS.view === "almanac") return;
@@ -5170,6 +5312,18 @@
       var o = null; (window.DEEPSKY || []).forEach(function (x) { if (x.n === name) o = x; });
       return o ? riseTransitSet(o, sysJD(), CHART.lat, CHART.lon) : null;
     },
+    ECL: function (y) { return eclipsesFrom(y || new Date().getUTCFullYear()); },
+    ECLINFO: function (iso) {
+      var ms = Date.parse(iso.indexOf("T") >= 0 ? iso : iso + "T12:00:00Z");
+      return solarEclipseInfo(ms / 86400000 + 2440587.5);
+    },
+    MOONLL: function (iso) {
+      var v = new THREE.Vector3();
+      moonGeo(Date.parse(iso + "T12:00:00Z") / 86400000 + 2440587.5, v);
+      var r = v.length();
+      return { lon: norm360(Math.atan2(v.y, v.x) / D2R), lat: Math.asin(v.z / r) / D2R, rAU: r };
+    },
+    EVENTS: function (y, m) { return skyEventsMonth(y || new Date().getUTCFullYear(), m == null ? new Date().getUTCMonth() : m); },
     SWLIVE: function () { return SWLIVE; },
     REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
