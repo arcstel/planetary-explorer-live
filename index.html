@@ -185,6 +185,11 @@
   .sgrid{border-collapse:collapse;font-size:10.5px;margin-top:8px;width:100%}
   .sgrid td,.sgrid th{border:1px solid #16202f;padding:2px 3px;text-align:center;color:#93a7c6}
   .sgrid th{color:#61748e}
+  .abar{display:flex;align-items:center;gap:8px;padding:2px 0;font-size:11.5px;color:#93a7c6}
+  .abar>span:first-child{min-width:64px}
+  .abar .bw{flex:1 1 auto;height:6px;background:#16202f;border-radius:4px;overflow:hidden}
+  .abar .bw i{display:block;height:100%;background:linear-gradient(90deg,#4f8cff,#35d0e0)}
+  .abar b{min-width:34px;text-align:right;color:#dfe6ff;font-weight:400}
   @media(max-width:820px){#skyright{display:none}#skyleft{width:170px}}
   body.system #searchwrap{display:none}
   body.system #lblcat{display:none}
@@ -244,6 +249,22 @@
   #help code{background:#0d1626;border:1px solid #22334a;border-radius:4px;padding:0 4px;color:#bff4fb}
   #help .hp-note{color:#61748e;font-size:11px;line-height:1.6;margin:0 0 4px}
   #help .hp-close{position:absolute;right:12px;top:10px;background:none;border:0;color:#61748e;font-size:14px;cursor:pointer;padding:4px 6px}
+  #modes{position:fixed;inset:0;z-index:64;display:none;place-items:center;background:rgba(2,2,8,.82);padding:18px}
+  #modes.open{display:grid}
+  #modes .md-panel{max-width:760px;width:100%;max-height:90vh;overflow:auto;position:relative;
+    background:#0a1120;border:1px solid #223046;border-radius:16px;padding:22px 24px}
+  #modes h2{color:#35d0e0;font-size:16px;margin:0 0 4px}
+  #modes .md-sub{color:#61748e;font-size:11.5px;margin:0 0 12px}
+  #modes .md-close{position:absolute;right:12px;top:10px;background:none;border:0;color:#61748e;font-size:14px;cursor:pointer;padding:4px 6px}
+  #modesgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+  .md-card{background:#0d1626;border:1px solid #22334a;border-radius:10px;padding:11px 13px;cursor:pointer;
+    transition:border-color .2s,transform .2s}
+  .md-card:hover{border-color:#4f8cff;transform:translateY(-2px)}
+  .md-card.on{border-color:#35d0e0}
+  .md-card b{color:#dfe6ff;font-size:13px;display:block;margin-bottom:3px}
+  .md-card .k{color:#ffb454;font-size:10.5px;margin-left:6px}
+  .md-card span{color:#93a7c6;font-size:11.5px;line-height:1.55;display:block}
+  @media(max-width:600px){#modesgrid{grid-template-columns:1fr}}
   #tonight{position:fixed;inset:0;z-index:64;display:none;place-items:center;background:rgba(2,2,8,.82);padding:18px}
   #tonight.open{display:grid}
   #tonight .tn-panel{max-width:660px;max-height:90vh;overflow:auto;position:relative;
@@ -589,6 +610,10 @@
       <option value="equal">Equal</option>
       <option value="porphyry">Porphyry</option>
     </select></label>
+    <label style="display:flex;align-items:center;justify-content:space-between">Transits — natal vs now
+      <input id="trnon" type="checkbox" style="width:auto"></label>
+    <label style="display:flex;align-items:center;justify-content:space-between">Solar return — this year
+      <input id="srton" type="checkbox" style="width:auto"></label>
     <label style="display:flex;align-items:center;justify-content:space-between">Synastry — two charts
       <input id="synon" type="checkbox" style="width:auto"></label>
     <div id="synb" style="display:none;border-top:1px solid #16202f;margin-top:6px;padding-top:8px">
@@ -912,10 +937,55 @@
   </div>
 </div>
 
+<div id="modes">
+  <div class="md-panel">
+    <button class="md-close" id="modesclose" aria-label="Close modes">✕</button>
+    <h2>MODES &amp; GUIDES</h2>
+    <p class="md-sub">Tap any mode to jump straight to it. Each card is a one-line how-to.</p>
+    <div id="modesgrid"></div>
+    <button id="modesclose2" style="margin-top:12px">Close</button>
+  </div>
+</div>
+
 <div id="help">
   <div class="hp-panel">
     <button class="hp-close" id="helpclose" aria-label="Close help">✕</button>
     <h2>SETUP &amp; HELP</h2>
+    <h3>🗂 Switching modes</h3>
+    <p class="hp-note">The <b>🗂 Modes</b> button in the system bar opens a grid of
+       every view with a one-line how-to — tap a card to jump straight there. It
+       is the fastest way to move between the atlas, the sky chart, astrology,
+       flares, the almanac, AR and the rest.</p>
+    <h3>🌌 Sky tracker</h3>
+    <ol>
+      <li>Filter the <b>Objects</b> list or pick a preset (Above horizon / My lists
+          / Messier / Caldwell / binocular best).</li>
+      <li>Tap any row for a <b>Tonight</b> plan — altitude now, transit, rise/set
+          and a 24-hour altitude curve.</li>
+      <li>Star an object to add it to your lists; export the list with ⤓.</li>
+      <li>Below are Jupiter's moons (with transits and shadows) and Saturn's rings.</li>
+    </ol>
+    <h3>✦ Astrology</h3>
+    <ol>
+      <li>Enter a date, time, UTC offset and place to get the Ascendant, MC and
+          twelve house cusps.</li>
+      <li>Read positions, aspects, the aspect grid, then the <b>Balance</b>
+          (element/modality), hemispheres, chart shape and essential dignities.</li>
+      <li>Tick <b>Synastry</b> for a second person, <b>Transits</b> to compare the
+          chart with tonight's sky, or <b>Solar return</b> for this year's return.</li>
+    </ol>
+    <h3>☀ Space weather</h3>
+    <p class="hp-note">The Sun's active regions are projected onto the Earth-facing
+       disk with the Earth-impact angle; the side panel lists flare risk, recent
+       X-ray flares, Kp and the solar wind. Optional live refresh is in Settings.</p>
+    <h3>🗓 Almanac</h3>
+    <p class="hp-note">A month of rise/set, twilight and phases, with a
+       <b>Sky events</b> list beneath: eclipses, oppositions, conjunctions and
+       meteor showers.</p>
+    <h3>☾ Moon, 📜 Codex, 🏙 Street maps</h3>
+    <p class="hp-note">Moon mode gives the true phase and rise/set; the Codex is a
+       historical page for each world; street maps open ~1 m/pixel imagery over
+       seven US metros (the 🏙 button appears when the globe is over one).</p>
     <h3>🔭 Telescope — ASCOM Alpaca / INDI</h3>
     <ol>
       <li>Put the phone/tablet on the <b>same Wi‑Fi</b> as the mount computer.</li>
@@ -1020,6 +1090,7 @@
   <button id="flarebtn" title="Solar flares — NOAA active regions, flare risk and Earth-impact geometry" aria-label="Solar flares">☀ Flares</button>
   <button id="arbtn" title="AR — overlay the star chart on your camera" aria-label="AR camera overlay">📷 AR</button>
   <button id="syssky" title="Astrology — birth chart, houses, aspects and moon phase" aria-label="Astrology chart">✦ Astrology</button>
+  <button id="modesbtn" title="Modes &amp; guides — jump to any view, with a short how-to" aria-label="Modes and guides">🗂 Modes</button>
   <button id="sysbodies" title="All 20 worlds">☰ Bodies</button>
   <button id="vrbtn" style="display:none" title="Enter VR (beta — needs a WebXR headset)">🥽 VR</button>
 </div>
@@ -2523,6 +2594,12 @@
         html: "<p>For a calmer mood, <b>🎵 Music</b> plays a soft ambient tone — a " +
           "generated loop that ships offline. Toggle it any time from the bar, or set " +
           "the level in ⚙ Settings.</p>" },
+      { glyph: "🗂", title: "Every mode, one tap away",
+        html: "<p>The <b>🗂 Modes</b> button in the system bar opens a grid of every " +
+          "view — the atlas, ☉ solar-system map, 🧭 sky tracker, ☀ space weather, " +
+          "✦ astrology, ☾ Moon, 🗓 almanac, 📷 AR, 📜 codex and 🌙 First light — each " +
+          "with a one-line how-to. Jump straight to any of them, and reopen the full " +
+          "guides from <b>❔ Help</b>.</p>" },
       { glyph: "🔭", title: "Point it at the sky",
         html: "<p>Open <b>📷 AR</b> to overlay the chart on your camera, and " +
           "<b>🧭 Sky tracker → Telescope</b> to drive an ASCOM Alpaca mount " +
@@ -3651,7 +3728,18 @@
   }
   var CHART = { name: "Chart A", date: null, time: "12:00", tz: 0, lat: 51.5, lon: 0, house: "placidus" };
   var CHART2 = { name: "Person B", date: null, time: "12:00", tz: 0, lat: 51.5, lon: 0 };
-  var SYNASTRY = false;
+  var SYNASTRY = false, TRANSITS = false, SOLAR_RETURN = false;
+  // Solar return: the moment the Sun returns to its natal longitude, near the
+  // birthday. Solved from the natal Sun longitude with a couple of Newton steps.
+  function solarReturnJD(natalLon, jd0) {
+    var t = jd0;
+    for (var i = 0; i < 12; i++) {
+      var l = geoLon("sun", t), d = norm180(l - natalLon);
+      if (Math.abs(d) < 1e-6) break;
+      t -= d / 0.9856;                     // Sun moves ~0.9856 deg/day
+    }
+    return t;
+  }
   function jdFrom(c) {
     var ds = c.date || isoDate(SYS.dateUTC);
     var p = ds.split("-"), t = (c.time || "12:00").split(":");
@@ -3714,6 +3802,88 @@
         L.asp.name + " " + L.b.b.glyph + "</span><span>" + L.sep.toFixed(1) + "° (" + L.orb.toFixed(1) + ")</span></div>";
     }).join("");
   }
+  // ---- astrology analysis: dignities, element/modality, chart shape ----
+  var ELEMENTS = ["Fire", "Earth", "Air", "Water"];
+  var MODALITIES = ["Cardinal", "Fixed", "Mutable"];
+  function elementOf(P) { return ELEMENTS[P.p.sign % 4]; }
+  function modalityOf(P) { return MODALITIES[P.p.sign % 3]; }
+  var DIGNITY = {
+    sun: { domicile: [4], exalt: [0], fall: [6], detriment: [10] },
+    moon: { domicile: [3], exalt: [1], fall: [7], detriment: [9] },
+    mercury: { domicile: [2, 5], exalt: [5], fall: [11], detriment: [8, 11] },
+    venus: { domicile: [1, 6], exalt: [11], fall: [5], detriment: [0, 7] },
+    mars: { domicile: [0, 7], exalt: [9], fall: [3], detriment: [1, 6] },
+    jupiter: { domicile: [8, 11], exalt: [3], fall: [9], detriment: [2, 5] },
+    saturn: { domicile: [9, 10], exalt: [6], fall: [0], detriment: [3, 4] },
+    uranus: { domicile: [10], exalt: [7], fall: [1], detriment: [4] },
+    neptune: { domicile: [11], exalt: [8], fall: [5], detriment: [2] },
+    pluto: { domicile: [7], exalt: [5], fall: [2], detriment: [1] }
+  };
+  function dignityOf(P) {
+    var d = DIGNITY[P.b.id];
+    if (!d) return "";
+    var s = P.p.sign;
+    if (d.domicile.indexOf(s) >= 0) return "domicile";
+    if (d.exalt.indexOf(s) >= 0) return "exalted";
+    if (d.fall.indexOf(s) >= 0) return "fall";
+    if (d.detriment.indexOf(s) >= 0) return "detriment";
+    return "";
+  }
+  var TRAD = { aries: "Mars", taurus: "Venus", gemini: "Mercury", cancer: "Moon",
+    leo: "Sun", virgo: "Mercury", libra: "Venus", scorpio: "Mars", sagittarius: "Jupiter",
+    capricorn: "Saturn", aquarius: "Saturn", pisces: "Jupiter" };
+  function analysisHTML(A) {
+    var el = { Fire: 0, Earth: 0, Air: 0, Water: 0 };
+    var md = { Cardinal: 0, Fixed: 0, Mutable: 0 };
+    var hemDay = 0, hemNight = 0, hemEast = 0, hemWest = 0;
+    var lords = {}, dign = [], lons = [];
+    A.pos.forEach(function (P) {
+      el[elementOf(P)]++; md[modalityOf(P)]++;
+      lons.push(P.lon);
+      var h = P.house;
+      if (h >= 7 && h <= 12) hemDay++; else hemNight++;
+      if (h >= 10 || h <= 3) hemEast++; else hemWest++;
+      var dg = dignityOf(P);
+      if (dg) dign.push(P.b.glyph + " " + P.b.name + " — " + dg);
+      var sg = SIGNS[P.p.sign][0].toLowerCase();
+      lords[TRAD[sg]] = (lords[TRAD[sg]] || 0) + 1;
+    });
+    var total = A.pos.length || 1;
+    var bar = function (name, n) {
+      var pct = Math.round((n / total) * 100);
+      return "<div class='abar'><span>" + name + "</span>" +
+        "<span class='bw'><i style='width:" + pct + "%'></i></span><b>" + pct + "%</b></div>";
+    };
+    var sorted = lons.slice().sort(function (a, b) { return a - b; });
+    var maxGap = 0, gi = 0;
+    for (var i = 0; i < sorted.length; i++) {
+      var g2 = norm360(sorted[(i + 1) % sorted.length] - sorted[i]);
+      if (g2 > maxGap) { maxGap = g2; gi = i; }
+    }
+    var span = 360 - maxGap;
+    var spread = sorted.map(function (x) { return norm360(x - sorted[(gi + 1) % sorted.length]); });
+    spread.sort(function (a, b) { return a - b; });
+    var halfA = 0, halfB = 0;
+    spread.forEach(function (x) { (x < span * 0.5 ? halfA++ : halfB++); });
+    var shape;
+    if (span < 120) shape = "Bundle";
+    else if (halfA >= spread.length - 1 || halfB >= spread.length - 1) shape = "Bowl";
+    else if (span < 180) shape = "Locomotive";
+    else shape = "Splash";
+    var lordTop = Object.keys(lords).sort(function (a, b) { return lords[b] - lords[a]; })[0];
+    return "<h3>BALANCE</h3>" +
+      bar("Fire", el.Fire) + bar("Earth", el.Earth) + bar("Air", el.Air) + bar("Water", el.Water) +
+      "<div style='height:6px'></div>" +
+      bar("Cardinal", md.Cardinal) + bar("Fixed", md.Fixed) + bar("Mutable", md.Mutable) +
+      "<h3>HEMISPHERES</h3>" +
+      "<div><span>Above / below horizon</span><span>" + hemDay + " / " + hemNight + "</span></div>" +
+      "<div><span>East / west of the MC</span><span>" + hemEast + " / " + hemWest + "</span></div>" +
+      "<div><span>Chart shape</span><span>" + shape + "</span></div>" +
+      (lordTop ? "<div><span>Most-populated sign ruler</span><span>" + lordTop + " (" + lords[lordTop] + ")</span></div>" : "") +
+      "<h3>ESSENTIAL DIGNITY</h3>" +
+      (dign.length ? dign.map(function (x) { return "<div><span>" + x + "</span></div>"; }).join("")
+        : "<div><span>No planet in domicile, exaltation, fall or detriment.</span></div>");
+  }
   function gridTable(A, B) {
     var cols = B || A, html = "<table class='sgrid'><tr><th></th>";
     cols.forEach(function (P) { html += "<th>" + P.b.glyph + "</th>"; });
@@ -3735,6 +3905,24 @@
   function updateSkyPanels() {
     var A = computeChart(CHART);
     var Bc = SYNASTRY ? computeChart(CHART2) : null;
+    // Transits: the live sky at the system date, placed over the natal houses.
+    if (!Bc && TRANSITS) {
+      Bc = computeChart({ date: isoDate(SYS.dateUTC), time: "12:00", tz: 0,
+        lat: CHART.lat, lon: CHART.lon, house: CHART.house });
+    }
+    // Solar return: re-cast the natal chart at the Sun's return, this year.
+    var natalSun = null;
+    A.pos.forEach(function (P) { if (P.b.id === "sun") natalSun = P.lon; });
+    if (!Bc && SOLAR_RETURN && natalSun != null) {
+      var jr = solarReturnJD(natalSun, jdFrom(CHART));
+      var yr = new Date(SYS.dateUTC).getUTCFullYear();
+      if (yr > new Date((jdFrom(CHART) - 2440587.5) * 86400000).getUTCFullYear()) {
+        jr = solarReturnJD(natalSun, Date.UTC(yr, 0, 1) / 86400000 + 2440587.5);
+      }
+      var d = new Date((jr - 2440587.5) * 86400000);
+      Bc = computeChart({ date: isoDate(d.getTime()), time: ("0" + d.getUTCHours()).slice(-2) + ":" +
+        ("0" + d.getUTCMinutes()).slice(-2), tz: 0, lat: CHART.lat, lon: CHART.lon, house: CHART.house });
+    }
     var intra = [], i, j;
     for (i = 0; i < A.pos.length; i++) for (j = i + 1; j < A.pos.length; j++) {
       var d = angDiff(A.pos[i].lon, A.pos[j].lon);
@@ -3749,10 +3937,14 @@
     html += "<h3>HOUSES (" + (CHART.house || "placidus") + ")</h3>" + cuspRows(A.hs);
     html += "<h3>" + (CHART.name || "A") + " — ASPECTS</h3>" + aspRows(intra);
     html += "<h3>ASPECT GRID</h3>" + gridTable(A.pos);
+    html += analysisHTML(A);
     if (Bc) {
-      html += "<h3>" + (CHART2.name || "Chart B").toUpperCase() + " — POSITIONS</h3>" + posRows(Bc.pos, false);
-      html += "<h3>INTER-ASPECTS &nbsp;<span style='color:#61748e'>A ↔ B</span></h3>" + aspRows(inter);
-      html += "<h3>SYNASTRY GRID</h3>" + gridTable(A.pos, Bc.pos);
+      var title = SYNASTRY ? "INTER-ASPECTS &nbsp;<span style='color:#61748e'>A ↔ B</span>"
+        : (SOLAR_RETURN ? "SOLAR RETURN — " + A.pos.length + " planets vs natal" : "TRANSITS NOW vs natal");
+      html += "<h3>" + (CHART2.name || "Chart B").toUpperCase() + " — POSITIONS</h3>" +
+        (SOLAR_RETURN || TRANSITS ? posRows(Bc.pos, false) : posRows(Bc.pos, false)) +
+        "<h3>" + title + "</h3>" + aspRows(inter) +
+        "<h3>GRID</h3>" + gridTable(A.pos, Bc.pos);
     }
     var body = document.getElementById("skybody");
     if (body) body.innerHTML = html;
@@ -5746,6 +5938,16 @@
       document.getElementById("synb").style.display = SYNASTRY ? "" : "none";
       if (SYS.view === "sky") drawSky();
     });
+    document.getElementById("trnon").addEventListener("change", function () {
+      TRANSITS = this.checked;
+      if (TRANSITS) { SOLAR_RETURN = false; document.getElementById("srton").checked = false; }
+      if (SYS.view === "sky") drawSky();
+    });
+    document.getElementById("srton").addEventListener("change", function () {
+      SOLAR_RETURN = this.checked;
+      if (SOLAR_RETURN) { TRANSITS = false; document.getElementById("trnon").checked = false; }
+      if (SYS.view === "sky") drawSky();
+    });
     document.getElementById("bnow").addEventListener("click", function () {
       var d = new Date(SYS.dateUTC);
       CHART.date = isoDate(SYS.dateUTC);
@@ -5880,6 +6082,16 @@
   });
   document.getElementById("help").addEventListener("click", function (e) {
     if (e.target === this) this.classList.remove("open");
+  });
+  document.getElementById("modesbtn").addEventListener("click", function () {
+    renderModes();
+    document.getElementById("modes").classList.add("open");
+  });
+  var mdClose = function () { document.getElementById("modes").classList.remove("open"); };
+  document.getElementById("modesclose").addEventListener("click", mdClose);
+  document.getElementById("modesclose2").addEventListener("click", mdClose);
+  document.getElementById("modes").addEventListener("click", function (e) {
+    if (e.target === this) mdClose();
   });
   document.getElementById("tonightbtn").addEventListener("click", function () {
     renderTonight();
@@ -6464,6 +6676,65 @@
       "Regions drift from the snapshot at the mean synodic rate, so their longitude follows " +
       "the date you set. Source: " + (sw.source || "NOAA SWPC") + " (public domain).";
   }
+  // ---- modes & guides: one switch for every view, with a one-line how-to ----
+  var MODES = [
+    { id: "globe", btn: null, glyph: "🪐", name: "Explore a world",
+      text: "Drag to spin any planet, pinch/scroll to zoom, tap a label to fly there. The default view." },
+    { id: "system", btn: "sysbtn", glyph: "☉", name: "Solar system map",
+      text: "Zoom out or hit the button for the live orbit map: any date 1800-2050, play time, follow comets, toggle true scale." },
+    { id: "city", btn: "citybtn", glyph: "🏙", name: "Street maps",
+      text: "Seven US metros open as flat, pannable ~1 m/pixel street maps. The button appears when the globe is over one." },
+    { id: "tracker", btn: "trkbtn", glyph: "🧭", name: "Sky tracker",
+      text: "A compass panorama of the sky now: 41,411 stars, 88 constellations, deep-sky objects, Jupiter's moons and a Tonight planner." },
+    { id: "flare", btn: "flarebtn", glyph: "☀", name: "Space weather",
+      text: "NOAA active regions projected on the Sun's disk with our own Earth-impact geometry, flare risk and the solar wind." },
+    { id: "sky", btn: "syssky", glyph: "✦", name: "Astrology",
+      text: "Birth chart with houses, aspects, element balance and dignities; add a second chart for synastry, transits or the solar return." },
+    { id: "moon", btn: "moonbtn", glyph: "☾", name: "Moon mode",
+      text: "The Moon's true phase for any date: illumination, age, distance, next phases and rise/transit/set." },
+    { id: "almanac", btn: "almbtn", glyph: "🗓", name: "Almanac",
+      text: "A month of sunrise/sunset, twilight, moonrise/set and daily phase, plus eclipses, oppositions and meteor showers." },
+    { id: "ar", btn: "arbtn", glyph: "📷", name: "AR overlay",
+      text: "Point the camera at the sky and the chart is drawn over it. Nudge the heading and field of view if your compass drifts." },
+    { id: "codex", btn: "codexbtn", glyph: "📜", name: "Codex",
+      text: "A historical parchment for every catalogued body - naming, discovery and key facts, with a 239-body index." },
+    { id: "tonight", btn: "tonightbtn", glyph: "🌙", name: "First light",
+      text: "A pre-session checklist: darkness window, Moon, what's up now with bearings, and telescope/AR readiness." }
+  ];
+  function switchMode(id) {
+    document.getElementById("modes").classList.remove("open");
+    if (id === "globe") { goGlobe(); return; }
+    var b = null;
+    MODES.forEach(function (m) { if (m.id === id) b = m.btn; });
+    var el = b ? document.getElementById(b) : null;
+    if (el && el.style.display !== "none") el.click();
+  }
+  // Exit whichever mode is active and return to the globe view.
+  function goGlobe() {
+    var v = SYS.view;
+    if (v === "globe") return;
+    if (v === "flare") { exitFlares(); return; }
+    if (v === "tracker") { exitTracker(); return; }
+    if (v === "almanac") { exitAlmanac(); return; }
+    if (v === "sky") { exitSky(); return; }
+    if (v === "moon") { exitMoon(); return; }
+    if (v === "ar") { exitAR(); return; }
+    if (v === "city") { exitCity(); return; }
+    if (v === "codex") { exitCodex(); return; }
+    if (v === "system") { enterGlobe(SYS.lastGlobe || state.body); return; }
+    enterGlobe(state.body);
+  }
+  function renderModes() {
+    var cur = SYS.view;
+    document.getElementById("modesgrid").innerHTML = MODES.map(function (m) {
+      var active = (m.id === cur) || (cur === "globe" && m.id === "globe");
+      return "<div class='md-card" + (active ? " on" : "") + "' data-mode='" + m.id + "'>" +
+        "<b>" + m.glyph + " " + m.name + "</b><span>" + m.text + "</span></div>";
+    }).join("");
+    document.getElementById("modesgrid").querySelectorAll(".md-card").forEach(function (el) {
+      el.addEventListener("click", function () { switchMode(el.getAttribute("data-mode")); });
+    });
+  }
   function enterFlares() {
     if (SYS.view === "flare") return;
     arStop();
@@ -6559,6 +6830,9 @@
         az: norm360(Math.atan2(v.dir[0], v.dir[1]) / D2R) };
     },
     ARSTATE: function () { return { active: AR.active, hasOri: AR.hasOri, camErr: AR.camErr, yaw: AR.yaw, pitch: AR.pitch, arFov: SET.arFov, arHead: SET.arHead }; },
+    MODES: function () { return MODES.map(function (m) { return m.id; }); },
+    GOMODE: function (id) { switchMode(id); },
+    SKYOPTS: function () { return { transits: TRANSITS, solarReturn: SOLAR_RETURN, synastry: SYNASTRY }; },
     TONIGHT_TEXT: function () { return tonightText(); },
     LIST_TEXT: function () { return listText(); },
     MUSIC: function () { return { on: !!SET.music, playing: !!(MUSIC.el && !MUSIC.el.paused), vol: MUSIC.el ? MUSIC.el.volume : 0 }; },
