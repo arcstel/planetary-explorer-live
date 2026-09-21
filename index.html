@@ -78,7 +78,7 @@
   #sysbar{position:fixed;top:46px;left:0;right:0;display:none;align-items:center;gap:8px;
     padding:8px 14px;background:rgba(4,4,12,.72);backdrop-filter:blur(12px);
     border-bottom:1px solid #1a2233;z-index:20;flex-wrap:wrap}
-  body.system #sysbar,body.sky #sysbar,body.moonmode #sysbar,body.almanac #sysbar,body.tracker #sysbar{display:flex}
+  body.system #sysbar,body.sky #sysbar,body.moonmode #sysbar,body.almanac #sysbar,body.tracker #sysbar,body.flaremode #sysbar{display:flex}
   #skycanvas{position:fixed;inset:0;z-index:9;display:none}
   body.sky #skycanvas{display:block}
   body.sky #c,body.moonmode #c{display:none}
@@ -98,6 +98,40 @@
   .mbig{font-size:19px;color:#dfe6ff;margin:0 0 2px}
   .msub{color:#61748e;font-size:11px;margin-bottom:10px}
   #moonstripcv{background:#0a1120;border-radius:6px;width:100%;height:auto;display:block}
+  /* ---- solar-flare projection mode ---- */
+  #flarecanvas{position:fixed;inset:0;z-index:9;display:none;background:radial-gradient(ellipse at 50% 45%,#0a0710,#030309 70%)}
+  body.flaremode #flarecanvas{display:block}
+  body.flaremode #c,body.flaremode #skycanvas{display:none}
+  body.flaremode #zoomwrap,body.flaremode #hud,body.flaremode #cityhud,body.flaremode #syshud,
+  body.flaremode #searchwrap{display:none}
+  #flareui{position:fixed;inset:0;z-index:11;display:none;pointer-events:none}
+  body.flaremode #flareui{display:block}
+  #flareleft,#flareright{position:absolute;top:104px;bottom:16px;overflow:auto;pointer-events:auto;
+    background:rgba(6,8,18,.86);border:1px solid #1a2233;border-radius:12px;padding:14px 15px;
+    font-size:12px;color:#93a7c6}
+  #flareleft{left:10px;width:264px}
+  #flareright{right:10px;width:324px}
+  #flareleft h3,#flareright h3{color:#ffb454;font-size:11px;letter-spacing:.6px;margin:0 0 8px}
+  #flareright h3{margin-top:14px}
+  #flareleft .r,#flareright .r{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid #101827}
+  #flareleft .r b,#flareright .r b{color:#dfe6ff;font-weight:400}
+  .fbig{font-size:18px;color:#ffd2a0;margin:0 0 2px}
+  .fsub{color:#61748e;font-size:11px;margin-bottom:10px}
+  .fnote{color:#61748e;font-size:10.5px;line-height:1.65}
+  .freg{display:flex;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:7px;
+    cursor:pointer;border-bottom:1px solid #101827}
+  .freg:hover{background:rgba(120,150,220,.12)}
+  .freg.sel{background:rgba(255,180,84,.18);border-bottom-color:transparent}
+  .freg .ln{color:#dfe6ff}
+  .freg .dr{color:#ff8f6b}
+  .freg .dg{color:#7fd0a0}
+  #flaregeom{width:100%;height:auto;background:#060912;border-radius:8px;display:block}
+  .fcls{display:inline-block;min-width:34px;text-align:center;border-radius:5px;padding:1px 5px;
+    font-size:10.5px;background:#1a2233;color:#dfe6ff}
+  .fcls.x{background:#5a1b1b;color:#ff9a9a}.fcls.m{background:#5a3a12;color:#ffc27a}
+  .fcls.c{background:#173a2a;color:#8fe0b4}.fcls.b{background:#1a2233;color:#9fb0c8}
+  @media(max-width:900px){#flareright{display:none}#flareleft{width:200px}}
+  @media(max-width:700px){#flareleft{display:none}}
   body.sky #zoomwrap,body.sky #hud,body.sky #cityhud,body.sky #syshud,body.sky #searchwrap{display:none}
   #skyui{position:fixed;inset:0;z-index:11;display:none;pointer-events:none}
   body.sky #skyui{display:block}
@@ -387,6 +421,27 @@
     <h3>PHASE THIS MONTH</h3><canvas id="moonstripcv" width="272" height="40"></canvas>
   </div>
 </div>
+<canvas id="flarecanvas"></canvas>
+<div id="flareui">
+  <div id="flareleft">
+    <h3>☀ SOLAR FLARE PROJECTION</h3>
+    <div id="fl-summary"></div>
+    <h3>SELECTED REGION</h3>
+    <div id="fl-region"></div>
+    <h3>READING THE DISK</h3>
+    <div class="fnote" id="fl-help"></div>
+  </div>
+  <div id="flareright">
+    <h3>ACTIVE REGIONS · EARTH-IMPACT ANGLE</h3>
+    <div id="fl-list"></div>
+    <h3>SUN · EARTH PROJECTION</h3>
+    <canvas id="flaregeom" width="290" height="172"></canvas>
+    <h3>RECENT FLARES (GOES X-RAY)</h3>
+    <div id="fl-flares"></div>
+    <h3>GEOMAGNETIC · SOLAR WIND</h3>
+    <div id="fl-space"></div>
+  </div>
+</div>
 <div id="codex">
   <button id="codexindexbtn">☰ ALL BODIES</button>
   <div id="codexindex">
@@ -612,6 +667,7 @@
   <button id="trkbtn" title="Star tracker — the sky above you, with compass and planets">🧭 Sky tracker</button>
   <button id="almbtn" title="Almanac — rise, set, twilight, phases and seasons">🗓 Almanac</button>
   <button id="moonbtn" title="Moon — phase, distance, rise and set">☾ Moon</button>
+  <button id="flarebtn" title="Solar flares — NOAA active regions, flare risk and Earth-impact geometry">☀ Flares</button>
   <button id="syssky" title="Astrology — birth chart, houses, aspects and moon phase">✦ Astrology</button>
   <button id="sysbodies" title="All 20 worlds">☰ Bodies</button>
   <button id="vrbtn" style="display:none" title="Enter VR (beta — needs a WebXR headset)">🥽 VR</button>
@@ -650,6 +706,7 @@
 <script src="codex.js"></script>
 <script src="stars.js"></script>
 <script src="constellations.js"></script>
+<script src="spaceweather.js"></script>
 <script>
 (function () {
   "use strict";
@@ -1753,6 +1810,11 @@
     var cfg = BODIES[id];
     if (!cfg) return;
     state.body = id;
+    // Leaving sky / moon / tracker mode hides planetGroup, and those exit paths
+    // call enterGlobe() directly (not through its system-view swap), so restore
+    // the globe world here or the planet renders invisible behind its labels.
+    planetGroup.visible = true;
+    sysGroup && (sysGroup.visible = false);
     var token = ++loadToken;
     if (location.hash !== "#" + id) history.replaceState(null, "", "#" + id);
 
@@ -2046,6 +2108,7 @@
     else if (SYS.view === "moon") drawMoon();
     else if (SYS.view === "codex") renderCodex();
     else if (SYS.view === "tracker") drawTracker();
+    else if (SYS.view === "flare") drawFlares();
     else if (SYS.view === "almanac") { /* DOM-only view */ }
     else renderer.render(scene, camera);
   }
@@ -4168,6 +4231,9 @@
   document.getElementById("moonbtn").addEventListener("click", function () {
     if (SYS.view === "moon") exitMoon(); else enterMoon();
   });
+  document.getElementById("flarebtn").addEventListener("click", function () {
+    if (SYS.view === "flare") exitFlares(); else enterFlares();
+  });
   document.getElementById("trkbtn").addEventListener("click", function () {
     if (SYS.view === "tracker") exitTracker(); else enterTracker();
   });
@@ -4336,6 +4402,321 @@
     } catch (e) {}
   }
 
+  // ---------------- solar-flare projection mode ----------------
+  // spaceweather.js is a bundled snapshot of NOAA SWPC public-domain products
+  // (active regions, GOES X-ray flares, Kp, solar wind). We do our own geometry:
+  // propagate each region's heliographic longitude to the app date (mean synodic
+  // rotation), project it orthographically onto the Earth-facing solar disk using
+  // the sub-Earth latitude B0 (Meeus), and compute the angle between the region's
+  // radial direction and the Sun-Earth line — the angle a radial CME must fall
+  // inside to reach Earth.
+  var SW = (typeof window !== "undefined") ? window.SPACE_WEATHER : null;
+  var FLARE_CONE = 34;           // deg half-angle treated as Earth-directed
+  var SYNODIC = 360 / 27.2753;   // deg/day, solar rotation seen from Earth
+  var flareSel = null, flareHit = [], flarePanelJD = null;
+  var flareCanvas = document.getElementById("flarecanvas");
+  var flareCtx = flareCanvas.getContext("2d");
+
+  function subEarthLat(jd) {
+    var lam = geoLon("sun", jd);
+    var yr = 2000 + (jd - 2451545.0) / 365.25;
+    var om = 75.76 + 0.01397 * (yr - 1900);
+    return Math.asin(Math.sin(7.25 * D2R) * Math.sin((lam - om) * D2R)) / D2R;
+  }
+  function wrap180(x) { x = norm360(x); return x > 180 ? x - 360 : x; }
+  function swRegionJD() {
+    var d = (SW && SW.regionDate) || "2026-09-21", p = d.split("-");
+    return Date.UTC(+p[0], +p[1] - 1, +p[2], 0, 30) / 86400000 + 2440587.5;
+  }
+  // (B, L) -> disk frame. B = heliographic latitude, L = longitude relative to
+  // the central meridian (east positive). x = east, y = north, z = cos(angular
+  // distance from the sub-Earth point); z > 0 is the Earth-facing hemisphere.
+  function projSun(Bdeg, Ldeg, B0deg) {
+    var B = Bdeg * D2R, L = Ldeg * D2R, b = B0deg * D2R;
+    var cb = Math.cos(B), sb = Math.sin(B);
+    return {
+      x: cb * Math.sin(L),
+      y: sb * Math.cos(b) - cb * Math.sin(b) * Math.cos(L),
+      z: sb * Math.sin(b) + cb * Math.cos(b) * Math.cos(L)
+    };
+  }
+  function flareRegions() {
+    if (!SW || !SW.regions) return [];
+    var jd = sysJD(), dt = jd - swRegionJD(), b0 = subEarthLat(jd);
+    var out = [];
+    SW.regions.forEach(function (r) {
+      var lon = wrap180(r.lon - SYNODIC * dt);
+      var p = projSun(r.lat, lon, b0);
+      var impact = Math.acos(Math.max(-1, Math.min(1, p.z))) / D2R;
+      out.push({
+        r: r, lon: lon, x: p.x, y: p.y, z: p.z, B0: b0, visible: p.z > 0,
+        impact: impact, earthDir: p.z > 0 && impact <= FLARE_CONE,
+        risk: Math.max(r.c || 0, r.m || 0, r.x || 0)
+      });
+    });
+    out.sort(function (a, b) { return a.impact - b.impact; });
+    return out;
+  }
+  function locString(r, lon) {
+    var ns = r.lat >= 0 ? "N" : "S", ew = lon >= 0 ? "E" : "W";
+    return Math.abs(Math.round(r.lat)) + ns + Math.abs(Math.round(lon)) + ew;
+  }
+  function plotCurve(g, f, a, b, steps, cx, cy, R, force) {
+    var started = false;
+    g.beginPath();
+    for (var i = 0; i <= steps; i++) {
+      var p = f(a + (b - a) * i / steps);
+      if (p.z <= 0 && !force) { started = false; continue; }
+      var px = cx - p.x * R, py = cy - p.y * R;
+      if (!started) { g.moveTo(px, py); started = true; } else g.lineTo(px, py);
+    }
+    g.stroke();
+  }
+  function drawFlares() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = window.innerWidth, H = window.innerHeight;
+    if (flareCanvas.width !== Math.round(W * dpr) || flareCanvas.height !== Math.round(H * dpr)) {
+      flareCanvas.width = Math.round(W * dpr); flareCanvas.height = Math.round(H * dpr);
+      flareCanvas.style.width = W + "px"; flareCanvas.style.height = H + "px";
+    }
+    var g = flareCtx;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    var jd = sysJD(), regs = flareRegions();
+    var b0 = regs.length ? regs[0].B0 : subEarthLat(jd);
+    if (flarePanelJD === null || Math.abs(jd - flarePanelJD) > 1e-6) buildFlarePanels(regs, b0);
+    var leftW = W > 700 ? 264 : 0, rightW = W > 900 ? 324 : 0;
+    var cx = leftW + (W - leftW - rightW) / 2;
+    var cy = 116 + (H - 132) / 2;
+    var R = Math.max(70, Math.min((W - leftW - rightW) / 2 - 46, (H - 150) / 2 - 8));
+
+    var glow = g.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 2.1);
+    glow.addColorStop(0, "rgba(255,150,40,.26)");
+    glow.addColorStop(0.45, "rgba(255,110,30,.09)");
+    glow.addColorStop(1, "rgba(255,90,20,0)");
+    g.fillStyle = glow; g.beginPath(); g.arc(cx, cy, R * 2.1, 0, Math.PI * 2); g.fill();
+
+    var disk = g.createRadialGradient(cx - R * 0.18, cy - R * 0.2, R * 0.1, cx, cy, R);
+    disk.addColorStop(0, "#ffd98a"); disk.addColorStop(0.55, "#f6a233");
+    disk.addColorStop(0.85, "#c8631a"); disk.addColorStop(1, "#6e2c08");
+    g.fillStyle = disk; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill();
+
+    g.strokeStyle = "rgba(80,40,10,.42)"; g.lineWidth = 1;
+    [-60, -30, 0, 30, 60].forEach(function (B) {
+      plotCurve(g, function (L) { return projSun(B, L, b0); }, -90, 90, 90, cx, cy, R, false);
+    });
+    [-60, -30, 0, 30, 60].forEach(function (L) {
+      plotCurve(g, function (B) { return projSun(B, L, b0); }, -90, 90, 120, cx, cy, R, false);
+    });
+    g.strokeStyle = "rgba(120,200,255,.5)"; g.setLineDash([4, 4]);
+    plotCurve(g, function (B) { return projSun(B, 0, b0); }, -90, 90, 180, cx, cy, R, true);
+    g.setLineDash([]);
+    g.strokeStyle = "rgba(255,190,120,.75)"; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+
+    g.strokeStyle = "rgba(90,230,170,.55)"; g.setLineDash([3, 5]); g.lineWidth = 1;
+    g.beginPath(); g.arc(cx, cy, R * Math.sin(FLARE_CONE * D2R), 0, Math.PI * 2); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = "rgba(120,220,180,.75)"; g.font = "10px ui-monospace,monospace"; g.textAlign = "left";
+    g.fillText("Earth-directed CME zone (±" + FLARE_CONE + "°)",
+      cx + R * Math.sin(FLARE_CONE * D2R) + 6, cy + 3);
+
+    g.fillStyle = "#7f8ea8"; g.font = "11px ui-monospace,monospace"; g.textAlign = "center";
+    g.fillText("E", cx - R - 14, cy + 4); g.fillText("W", cx + R + 14, cy + 4);
+    g.fillText("N", cx, cy - R - 10); g.fillText("S", cx, cy + R + 18);
+    g.strokeStyle = "rgba(120,200,255,.8)"; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(cx - 7, cy); g.lineTo(cx + 7, cy); g.moveTo(cx, cy - 7); g.lineTo(cx, cy + 7); g.stroke();
+    g.fillStyle = "#8fc3ff"; g.font = "9.5px ui-monospace,monospace"; g.textAlign = "left";
+    g.fillText("sub-Earth point", cx + 10, cy - 9);
+
+    flareHit = [];
+    regs.forEach(function (o) {
+      if (!o.visible) return;
+      var px = cx - o.x * R, py = cy - o.y * R;
+      var rr = Math.max(3.5, Math.min(16, 3 + Math.sqrt(o.r.area || 1) / 2.1));
+      var col = o.r.x >= 10 ? "#ff5a5a" : (o.r.m >= 5 ? "#ffb454" : "#8fe0b4");
+      if (o.r.x > 0) {
+        g.beginPath(); g.arc(px, py, rr + 2 + Math.min(10, o.r.x / 2), 0, Math.PI * 2);
+        g.fillStyle = "rgba(255,80,80," + (0.05 + Math.min(0.22, o.r.x / 120)) + ")"; g.fill();
+      }
+      g.beginPath(); g.arc(px, py, rr, 0, Math.PI * 2);
+      g.fillStyle = col; g.globalAlpha = 0.9; g.fill(); g.globalAlpha = 1;
+      g.lineWidth = 1.4; g.strokeStyle = o.r.no === flareSel ? "#ffffff" : "rgba(0,0,0,.5)"; g.stroke();
+      if (o.earthDir) {
+        g.strokeStyle = "#5cf2b0"; g.lineWidth = 1.2; g.setLineDash([2, 3]);
+        g.beginPath(); g.arc(px, py, rr + 5, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+      }
+      g.fillStyle = "#ffe8cc"; g.font = (o.r.no === flareSel ? "bold " : "") + "10px ui-monospace,monospace";
+      g.textAlign = "left"; g.fillText(String(o.r.no), px + rr + 4, py - 3);
+      g.fillStyle = "#c9a98a"; g.font = "9px ui-monospace,monospace";
+      g.fillText(locString(o.r, o.lon), px + rr + 4, py + 8);
+      flareHit.push({ no: o.r.no, x: px, y: py, r: rr + 6 });
+    });
+
+    g.fillStyle = "#61748e"; g.font = "10px ui-monospace,monospace"; g.textAlign = "center";
+    g.fillText("NOAA SWPC snapshot " + ((SW && SW.regionDate) || "—") + " · projected to " +
+      isoDate(SYS.dateUTC) + " · sub-Earth latitude B0 " + b0.toFixed(1) + "°", cx, H - 14);
+    drawFlareGeom(regs);
+  }
+  function drawFlareGeom(regs) {
+    var cv = document.getElementById("flaregeom");
+    if (!cv) return;
+    var g = cv.getContext("2d"), W = cv.width, H = cv.height;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = "#060912"; g.fillRect(0, 0, W, H);
+    var sx = 34, ex = W - 40, y = H / 2 + 4, au = ex - sx;
+    g.strokeStyle = "rgba(90,120,170,.3)"; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+    var coneR = au * Math.tan(FLARE_CONE * D2R) * 0.9;
+    g.beginPath(); g.moveTo(sx, y); g.lineTo(ex, y - coneR); g.lineTo(ex, y + coneR); g.closePath();
+    g.fillStyle = "rgba(90,230,170,.10)"; g.fill();
+    g.strokeStyle = "rgba(90,230,170,.4)"; g.setLineDash([3, 4]); g.stroke(); g.setLineDash([]);
+    var sg = g.createRadialGradient(sx, y, 2, sx, y, 18);
+    sg.addColorStop(0, "#ffd98a"); sg.addColorStop(1, "rgba(246,162,51,.05)");
+    g.fillStyle = sg; g.beginPath(); g.arc(sx, y, 18, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#ffd98a"; g.beginPath(); g.arc(sx, y, 6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#6fa8ff"; g.beginPath(); g.arc(ex, y, 5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#8fc3ff"; g.font = "9px ui-monospace,monospace"; g.textAlign = "center";
+    g.fillText("Earth", ex, y + 18);
+    g.fillStyle = "#c9a98a"; g.textAlign = "left"; g.fillText("Sun", sx - 8, y + 24);
+    var hit = false;
+    regs.forEach(function (o) {
+      if (!o.visible && o.r.no !== flareSel) return;
+      var ang = (o.lon >= 0 ? 1 : -1) * o.impact * D2R;
+      var rx = sx + Math.cos(ang) * au * 0.92, ry = y + Math.sin(ang) * au * 0.92;
+      var sel = o.r.no === flareSel;
+      g.strokeStyle = sel ? "#ffb454" : (o.earthDir ? "rgba(92,242,176,.72)" : "rgba(150,170,200,.35)");
+      g.lineWidth = sel ? 2 : 1.2;
+      g.beginPath(); g.moveTo(sx, y); g.lineTo(rx, ry); g.stroke();
+      if (o.earthDir) hit = true;
+    });
+    if (hit) {
+      g.strokeStyle = "#5cf2b0"; g.lineWidth = 1.6;
+      g.beginPath(); g.arc(ex, y, 9, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = "#5cf2b0"; g.font = "9.5px ui-monospace,monospace"; g.textAlign = "center";
+      g.fillText("CME reaches Earth", ex, y - 16);
+    }
+    g.fillStyle = "#61748e"; g.font = "9px ui-monospace,monospace"; g.textAlign = "center";
+    g.fillText("radial CME direction vs the Sun–Earth line", W / 2, H - 4);
+  }
+  function frow(k, v) { return "<div class='r'><span>" + k + "</span><b>" + v + "</b></div>"; }
+  function buildFlarePanels(regs, b0) {
+    flarePanelJD = sysJD();
+    var sw = SW || {};
+    var nEarth = regs.filter(function (o) { return o.earthDir; }).length;
+    var top = regs.length ? regs[0] : null;
+    var kp = (sw.kp && sw.kp.length) ? sw.kp[sw.kp.length - 1] : null;
+    var wind = (sw.wind && sw.wind.length) ? sw.wind[sw.wind.length - 1] : null;
+    var mag = (sw.mag && sw.mag.length) ? sw.mag[sw.mag.length - 1] : null;
+    var idx = (sw.indices && sw.indices.length) ? sw.indices[sw.indices.length - 1] : null;
+    var kpMax = 0;
+    (sw.kp || []).forEach(function (k) { if (k.kp > kpMax) kpMax = k.kp; });
+    var gscale = kp ? (kpMax < 5 ? "no storm" : "G" + Math.min(5, Math.floor(kpMax) - 4)) : "—";
+
+    document.getElementById("fl-summary").innerHTML =
+      "<div class='fbig'>" + (top ? "Region " + top.r.no + " nearest Earth" : "No active regions") + "</div>" +
+      "<div class='fsub'>" + (top ? top.impact.toFixed(0) + "° from the sub-Earth point" : "snapshot empty") + "</div>" +
+      frow("Earth-directed", nEarth ? "<b>" + nEarth + " region" + (nEarth > 1 ? "s" : "") + "</b>" : "none") +
+      frow("Data snapshot", (sw.regionDate || "—")) +
+      frow("Projection date", isoDate(SYS.dateUTC)) +
+      frow("Sub-Earth lat B0", b0.toFixed(1) + "°") +
+      frow("Solar rotation", SYNODIC.toFixed(2) + "°/day") +
+      frow("Sunspot number", (idx && idx.ssn != null) ? idx.ssn.toFixed(0) + " (" + (idx.t || "") + ")" : "—") +
+      frow("F10.7 flux", (idx && idx.f107 != null) ? idx.f107.toFixed(0) + " sfu" : "—");
+
+    var sel = null;
+    regs.forEach(function (o) { if (o.r.no === flareSel) sel = o; });
+    if (!sel) sel = top;
+    var rob = document.getElementById("fl-region");
+    if (sel) {
+      var r = sel.r;
+      rob.innerHTML =
+        "<div class='fbig'>NOAA " + r.no + "</div>" +
+        "<div class='fsub'>" + locString(r, sel.lon) + " · Carrington " +
+          (r.carrington != null ? r.carrington.toFixed(0) : "—") + "°</div>" +
+        frow("Earth-impact angle", "<b>" + sel.impact.toFixed(1) + "°</b>") +
+        frow("Status", sel.z < 0 ? "far side" : (sel.earthDir ? "<span class='dr'>Earth-directed</span>" : "visible, off-axis")) +
+        frow("Area · spots", (r.area || 0) + " Msha · " + (r.spots || 0)) +
+        frow("Spot · mag class", (r.spotClass || "—") + " · " + (r.magClass || "—")) +
+        frow("C / M / X", (r.c || 0) + " / " + (r.m || 0) + " / " + (r.x || 0) + "%") +
+        frow("Proton", (r.proton || 0) + "%");
+    } else rob.innerHTML = "<div class='fnote'>No regions in the snapshot.</div>";
+
+    document.getElementById("fl-list").innerHTML = regs.map(function (o) {
+      return "<div class='freg" + (o.r.no === (sel && sel.r.no) ? " sel" : "") + "' data-no='" + o.r.no + "'>" +
+        "<span class='ln'>" + o.r.no + " · " + locString(o.r, o.lon) + "</span>" +
+        "<span class='" + (o.earthDir ? "dg" : "dr") + "'>" + o.impact.toFixed(0) + "° · " + o.risk + "%</span></div>";
+    }).join("") || "<div class='fnote'>No active regions.</div>";
+    document.getElementById("fl-list").querySelectorAll(".freg").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var n = +el.getAttribute("data-no");
+        flareSel = (flareSel === n) ? null : n;
+        flarePanelJD = null;
+      });
+    });
+
+    var recent = (sw.flares || []).slice(-12).reverse();
+    document.getElementById("fl-flares").innerHTML = recent.map(function (f) {
+      var cls = (f["class"] || "").toUpperCase();
+      return "<div class='r'><span class='fcls " + (cls ? cls[0].toLowerCase() : "b") + "'>" +
+        (cls || "—") + "</span><span class='fsub' style='margin:0'>" +
+        (f["max"] ? f["max"].slice(5, 16).replace("T", " ") + " UT" : "—") + "</span></div>";
+    }).join("") || "<div class='fnote'>No flares in the snapshot.</div>";
+
+    document.getElementById("fl-space").innerHTML =
+      frow("Kp now · max", (kp ? kp.kp.toFixed(1) : "—") + " · " + kpMax.toFixed(1) + " (" + gscale + ")") +
+      frow("Solar wind speed", wind ? wind.speed.toFixed(0) + " km/s" : "—") +
+      frow("Proton density", (wind && wind.density != null) ? wind.density.toFixed(1) + " p/cm³" : "—") +
+      frow("IMF Bt · Bz", mag ? (mag.bt != null ? mag.bt.toFixed(1) : "—") + " · " +
+        (mag.bz != null ? mag.bz.toFixed(1) : "—") + " nT" : "—") +
+      frow("Bz coupling", (mag && mag.bz != null) ? (mag.bz < -2 ? "<span class='dr'>southward</span>" : "northward") : "—");
+
+    document.getElementById("fl-help").innerHTML =
+      "The disk is the Earth-facing Sun, solar north up and east to the left. Blue dashes " +
+      "mark the central meridian; ⊕ is the sub-Earth point. The green dashed circle is the " +
+      "±" + FLARE_CONE + "° zone: a region inside it would throw a radial CME at Earth. " +
+      "Regions drift from the snapshot at the mean synodic rate, so their longitude follows " +
+      "the date you set. Source: " + (sw.source || "NOAA SWPC") + " (public domain).";
+  }
+  function enterFlares() {
+    if (SYS.view === "flare") return;
+    SYS.view = "flare";
+    var cl = document.body.classList;
+    cl.remove("system"); cl.remove("sky"); cl.remove("moonmode");
+    cl.remove("tracker"); cl.remove("almanac"); cl.remove("codex");
+    cl.add("flaremode");
+    planetGroup.visible = false;
+    sysGroup && (sysGroup.visible = false);
+    for (var si = 0; si < SYSB.length; si++) {
+      if (SYSB[si].labelEl) SYSB[si].labelEl.style.display = "none";
+      if (SYSB[si].tail) SYSB[si].tail.visible = false;
+    }
+    clearLabels(); setPlaying(false);
+    var sbEl = document.getElementById("sysbar");
+    var topPx = (sbEl ? sbEl.getBoundingClientRect().bottom : 46) + 12;
+    document.getElementById("flareleft").style.top = topPx + "px";
+    document.getElementById("flareright").style.top = topPx + "px";
+    if (location.hash !== "#flares") history.replaceState(null, "", "#flares");
+    setSysInfo("Solar flares — NOAA active regions and Earth-impact projection");
+    flarePanelJD = null;
+    drawFlares();
+  }
+  function exitFlares() {
+    if (SYS.view !== "flare") return;
+    document.body.classList.remove("flaremode");
+    SYS.view = "globe";
+    enterGlobe(state.body);
+  }
+  flareCanvas.addEventListener("click", function (e) {
+    if (SYS.view !== "flare") return;
+    var best = null, bd = 1e9;
+    flareHit.forEach(function (h) {
+      var d = Math.sqrt((h.x - e.clientX) * (h.x - e.clientX) + (h.y - e.clientY) * (h.y - e.clientY));
+      if (d < h.r + 14 && d < bd) { bd = d; best = h.no; }
+    });
+    if (best != null) { flareSel = (flareSel === best) ? null : best; flarePanelJD = null; }
+  });
+
   // Debug/verification handle (used by headless interaction tests).
   window.PE = { SYS: SYS, enterSystem: enterSystem, enterGlobe: enterGlobe,
     setSysDate: setSysDate, levelView: levelView,
@@ -4348,6 +4729,10 @@
     NEXTPH: function () { return nextPhases(chartJD()); },
     SEASON: function (y) { return seasonEvents(y || 2026); },
     SUNLON: function (jd) { return geoLon("sun", jd); },
+    SW: function () { return SW; },
+    VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
+    FLARES: function () { return { b0: subEarthLat(sysJD()), cone: FLARE_CONE,
+      regions: flareRegions() }; },
     pickN: function () { return pick.length; } };
 
   // ---------------- boot ----------------
@@ -4365,6 +4750,9 @@
       }
       loadBody("moon");
       enterSystem(true);
+    } else if (initial === "flares") {
+      loadBody("moon");
+      enterFlares();
     } else {
       loadBody(BODIES[initial] ? initial : "moon");
     }
