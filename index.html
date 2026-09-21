@@ -78,7 +78,22 @@
   #sysbar{position:fixed;top:46px;left:0;right:0;display:none;align-items:center;gap:8px;
     padding:8px 14px;background:rgba(4,4,12,.72);backdrop-filter:blur(12px);
     border-bottom:1px solid #1a2233;z-index:20;flex-wrap:wrap}
-  body.system #sysbar,body.sky #sysbar,body.moonmode #sysbar,body.almanac #sysbar,body.tracker #sysbar,body.flaremode #sysbar{display:flex}
+  body.system #sysbar,body.sky #sysbar,body.moonmode #sysbar,body.almanac #sysbar,body.tracker #sysbar,  body.flaremode #sysbar{display:flex}
+  body.armode #sysbar{display:flex}
+  #arvideo{position:fixed;inset:0;z-index:8;display:none;object-fit:cover;background:#000}
+  body.armode #arvideo{display:block}
+  #arcanvas{position:fixed;inset:0;z-index:9;display:none}
+  body.armode #arcanvas{display:block}
+  body.armode #c,body.armode #skycanvas,body.armode #flarecanvas{display:none}
+  body.armode #zoomwrap,body.armode #hud,body.armode #cityhud,body.armode #syshud,
+  body.armode #searchwrap{display:none}
+  #arui{position:fixed;inset:0;z-index:11;display:none;pointer-events:none}
+  body.armode #arui{display:block}
+  #arhud{position:absolute;left:12px;bottom:14px;pointer-events:none;background:rgba(6,8,18,.8);
+    border:1px solid #1a2233;border-radius:10px;padding:8px 12px;font-size:11px;color:#93a7c6;
+    max-width:min(460px,80vw)}
+  #arhud b{color:#35d0e0}
+  #arback{position:absolute;right:12px;bottom:14px;pointer-events:auto}
   #skycanvas{position:fixed;inset:0;z-index:9;display:none}
   body.sky #skycanvas{display:block}
   body.sky #c,body.moonmode #c{display:none}
@@ -370,6 +385,12 @@
 </head>
 <body>
 <canvas id="skycanvas"></canvas>
+<video id="arvideo" playsinline muted></video>
+<canvas id="arcanvas"></canvas>
+<div id="arui">
+  <div id="arhud"></div>
+  <button id="arback">◉ Exit AR</button>
+</div>
 <div id="loading">LOADING…</div>
 <div id="night"></div>
 
@@ -639,7 +660,15 @@
         <b>ASCOM Alpaca</b> mount on your own network by entering its address
         (host:port), then <b>GoTo</b> the selected object or <b>Sync</b> on it,
         with abort and park. The app talks only to the mount you enter; nothing
-        is sent anywhere else, and no internet is required.</p>
+        is sent anywhere else, and no internet is required. <b>INDI</b> users can
+        run an Alpaca bridge (e.g. <em>indi-alpaca-bridge</em>) and connect to
+        that address the same way.</p>
+    <p><b>AR (📷 in the system bar):</b> point your camera at the sky and the
+        chart is drawn over it — stars, constellations, the planets and the
+        Messier/Caldwell objects, aligned with the device's orientation. It
+        needs camera and motion access; without a compass or gyro the view falls
+        back to drag-to-look, and without a camera the overlay still works as a
+        finder. The field of view is approximate.</p>
     <p><b>Zodiac systems:</b> the chart can be drawn in the <em>tropical</em>
         zodiac (equinox of date), in the <em>sidereal</em> zodiac with a choice
         of ayanamsa — Lahiri, Fagan–Bradley, Krishnamurti, B. V. Raman or
@@ -793,6 +822,7 @@
   <button id="almbtn" title="Almanac — rise, set, twilight, phases and seasons">🗓 Almanac</button>
   <button id="moonbtn" title="Moon — phase, distance, rise and set">☾ Moon</button>
   <button id="flarebtn" title="Solar flares — NOAA active regions, flare risk and Earth-impact geometry">☀ Flares</button>
+  <button id="arbtn" title="AR — overlay the star chart on your camera">📷 AR</button>
   <button id="syssky" title="Astrology — birth chart, houses, aspects and moon phase">✦ Astrology</button>
   <button id="sysbodies" title="All 20 worlds">☰ Bodies</button>
   <button id="vrbtn" style="display:none" title="Enter VR (beta — needs a WebXR headset)">🥽 VR</button>
@@ -1703,6 +1733,7 @@
 
   function enterCity(idx) {
     if (!window.CITY_PACKS || !CITY_PACKS[idx]) return;
+    arStop();
     var c = CITY_PACKS[idx];
     ensureCityGroup();
     SYS.view = "city";
@@ -3105,6 +3136,7 @@
   }
   function enterSystem(instant) {
     if (SYS.view === "system") return;
+    arStop();
     SYS.lastGlobe = state.body;
     function swap() {
       SYS.view = "system";
@@ -3706,6 +3738,7 @@
   }
   function enterMoon() {
     if (SYS.view === "moon") return;
+    arStop();
     SYS.view = "moon";
     document.body.classList.remove("system");
     document.body.classList.add("moonmode");
@@ -3876,6 +3909,7 @@
   function enterCodex(id) {
     id = id || state.body;
     if (!window.CODEX) return;
+    arStop();
     if (!CODEX[id]) id = (state.body && CODEX[state.body]) ? state.body : "earth";
     SYS.view = "codex";
     document.body.classList.add("codex");
@@ -4207,6 +4241,7 @@
   }
   function enterAlmanac() {
     if (SYS.view === "almanac") return;
+    arStop();
     SYS.view = "almanac";
     document.body.classList.remove("system");
     document.body.classList.add("almanac");
@@ -4309,7 +4344,7 @@
         "<button id='tel-sync'>Sync</button><button id='tel-abort'>Abort</button>" +
         "<button id='tel-park'>Park</button><button id='tel-disc'>Disconnect</button></div>";
     } else {
-      html += "<div class='fnote'>" + (note || "Enter your mount's ASCOM Alpaca address (host:port) and connect to slew to the selected object.") + "</div>";
+      html += "<div class='fnote'>" + (note || "Enter your mount's ASCOM Alpaca address (host:port) and connect to slew to the selected object. INDI mounts work via an Alpaca bridge.") + "</div>";
     }
     el.innerHTML = html;
     var on = function (id, fn) { var b = document.getElementById(id); if (b) b.addEventListener("click", fn); };
@@ -4541,13 +4576,18 @@
         }
       });
     }
-    // stars
+    // stars — precession is negligible over a day, so cache the precessed
+    // position per star and only recompute every ~30 days (41k stars).
     var visible = [];
     if (window.STARS) STARS.forEach(function (st) {
-      var rd = precessRD(st.ra, st.dec, jd), hz = altAz(rd.ra, rd.dec, lst, lat);
+      if (!st._p || Math.abs(st._pjd - jd) > 30) {
+        var rd0 = precessRD(st.ra, st.dec, jd);
+        st._ra = rd0.ra; st._dec = rd0.dec; st._pjd = jd; st._p = 1;
+      }
+      var hz = altAz(st._ra, st._dec, lst, lat);
       if (hz.alt < -2) return;
       if (st.n) visible.push({ n: st.n, m: st.m, alt: hz.alt, az: hz.az });
-      var r = Math.max(0.55, 2.5 - st.m * 0.42);
+      var r = Math.max(0.5, 2.5 - st.m * 0.42);
       g.beginPath(); g.arc(x(hz.az), y(hz.alt), r, 0, Math.PI * 2);
       g.fillStyle = st.m < 1.5 ? "#ffffff" : (st.m < 2.8 ? "#dfe8ff" : "#b3c1dc");
       g.fill();
@@ -4813,6 +4853,7 @@
   }
   function enterTracker() {
     if (SYS.view === "tracker") return;
+    arStop();
     SYS.view = "tracker";
     document.body.classList.remove("system");
     document.body.classList.add("tracker");
@@ -4836,8 +4877,173 @@
     SYS.view = "globe";
     enterGlobe(state.body);
   }
+  // ---------------- AR sky overlay ----------------
+  // Point the camera at the sky and the chart is drawn over it. Orientation
+  // comes from DeviceOrientationEvent (W3C rotation matrix); if the device has
+  // no compass/gyro we fall back to drag-to-look. Camera preview is optional —
+  // without it the overlay still works as a finder.
+  var AR_FOV = 62;   // approximate horizontal field of view of a phone camera, degrees
+  var AR = { active: false, alpha: null, beta: null, gamma: null, hasOri: false, oriT: 0,
+    yaw: 180, pitch: 35, manual: false, raf: 0, dragging: false, lx: 0, ly: 0, camErr: "" };
+  var arCanvas = document.getElementById("arcanvas"), arCtx = arCanvas ? arCanvas.getContext("2d") : null;
+  var arVideo = document.getElementById("arvideo"), arStream = null;
+  function arRotMatrix(a, b, c) {
+    var cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cC = Math.cos(c), sC = Math.sin(c);
+    return [[cA * cC - sA * sB * sC, -cB * sA, cA * sC + cC * sA * sB],
+      [cC * sA + cA * sB * sC, cA * cB, sA * sC - cA * cC * sB],
+      [-cB * sC, sB, cB * cC]];
+  }
+  function arBasis(alpha, beta, gamma) {
+    var R = arRotMatrix(alpha * D2R, beta * D2R, gamma * D2R);
+    return { dir: [-R[0][2], -R[1][2], -R[2][2]], right: [R[0][0], R[1][0], R[2][0]],
+      up: [R[0][1], R[1][1], R[2][1]] };
+  }
+  function arManualBasis() {
+    var az = AR.yaw * D2R, al = AR.pitch * D2R;
+    return {
+      dir: [Math.sin(az) * Math.cos(al), Math.cos(az) * Math.cos(al), Math.sin(al)],
+      right: [Math.cos(az), -Math.sin(az), 0],
+      up: [-Math.sin(az) * Math.sin(al), -Math.cos(az) * Math.sin(al), Math.cos(al)]
+    };
+  }
+  function arView() {
+    if (AR.hasOri) return arBasis(AR.alpha, AR.beta, AR.gamma);
+    return arManualBasis();
+  }
+  function arProject(alt, az, b, W, H, f) {
+    var cl = Math.cos(alt * D2R);
+    var o = [Math.sin(az * D2R) * cl, Math.cos(az * D2R) * cl, Math.sin(alt * D2R)];
+    var fwd = o[0] * b.dir[0] + o[1] * b.dir[1] + o[2] * b.dir[2];
+    if (fwd <= 0.05) return null;
+    var rx = o[0] * b.right[0] + o[1] * b.right[1] + o[2] * b.right[2];
+    var ry = o[0] * b.up[0] + o[1] * b.up[1] + o[2] * b.up[2];
+    return { x: W / 2 + (rx / fwd) * f, y: H / 2 - (ry / fwd) * f, fwd: fwd };
+  }
+  function arOri(e) {
+    if (e.alpha === null && e.beta === null && e.gamma === null) return;
+    AR.alpha = e.alpha || 0; AR.beta = e.beta || 0; AR.gamma = e.gamma || 0;
+    AR.hasOri = true; AR.oriT = performance.now();
+  }
+  function arDraw() {
+    if (!AR.active || !arCtx) return;
+    AR.raf = requestAnimationFrame(arDraw);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = window.innerWidth, H = window.innerHeight;
+    if (arCanvas.width !== Math.round(W * dpr) || arCanvas.height !== Math.round(H * dpr)) {
+      arCanvas.width = Math.round(W * dpr); arCanvas.height = Math.round(H * dpr);
+      arCanvas.style.width = W + "px"; arCanvas.style.height = H + "px";
+    }
+    var g = arCtx;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    if (!AR.hasOri && performance.now() - AR.oriT > 2000) AR.manual = true;
+    var b = arView(), f = (W / 2) / Math.tan(AR_FOV * D2R / 2);
+    var jd = sysJD(), lat = CHART.lat, lon = CHART.lon, lst = lstDeg(jd, lon);
+    // horizon and cardinal points
+    g.lineWidth = 1;
+    for (var az = 0; az < 360; az += 5) {
+      var p0 = arProject(0, az, b, W, H, f), p1 = arProject(0, az + 5, b, W, H, f);
+      if (p0 && p1) { g.strokeStyle = "rgba(90,140,210,.5)"; g.beginPath(); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke(); }
+    }
+    var CARD = [[0, "N"], [90, "E"], [180, "S"], [270, "W"]];
+    CARD.forEach(function (c) {
+      var p = arProject(0, c[0], b, W, H, f);
+      if (!p) return;
+      g.fillStyle = "#8fc3ff"; g.font = "bold 16px ui-monospace,monospace"; g.textAlign = "center";
+      g.fillText(c[1], p.x, p.y - 6);
+    });
+    // stars (named / brighter), planets, deep sky
+    g.font = "11px ui-monospace,monospace";
+    (window.STARS || []).forEach(function (st) {
+      if (!(st.m < 3.6 && st.n)) return;
+      var rd = precessRD(st.ra, st.dec, jd), hz = altAz(rd.ra, rd.dec, lst, lat);
+      if (hz.alt < 0) return;
+      var p = arProject(hz.alt, hz.az, b, W, H, f);
+      if (!p) return;
+      g.fillStyle = "#ffffff"; g.beginPath(); g.arc(p.x, p.y, Math.max(1, 2.4 - st.m * 0.4), 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(220,232,255,.9)"; g.textAlign = "left"; g.fillText(st.n, p.x + 5, p.y - 4);
+    });
+    var BOD = [["sun", "☉", "#ffd257"], ["moon", "☽", "#dfe6ff"], ["mercury", "☿", "#c9b79a"],
+      ["venus", "♀", "#f0d59a"], ["mars", "♂", "#e07a52"], ["jupiter", "♃", "#e0b070"],
+      ["saturn", "♄", "#d9c79a"], ["uranus", "♅", "#9fd8e8"], ["neptune", "♆", "#7b9bea"]];
+    BOD.forEach(function (bd) {
+      var rd = bodyRD(bd[0], jd), hz = altAz(rd.ra, rd.dec, lst, lat);
+      if (hz.alt < 0) return;
+      var p = arProject(hz.alt, hz.az, b, W, H, f);
+      if (!p) return;
+      g.beginPath(); g.arc(p.x, p.y, 9, 0, Math.PI * 2); g.fillStyle = "rgba(4,4,12,.8)"; g.fill();
+      g.strokeStyle = bd[2]; g.lineWidth = 1.3; g.stroke();
+      g.fillStyle = bd[2]; g.font = "13px ui-monospace,monospace"; g.textAlign = "center";
+      g.textBaseline = "middle"; g.fillText(bd[1], p.x, p.y); g.textBaseline = "alphabetic";
+      g.font = "10px ui-monospace,monospace"; g.fillText(bd[0], p.x, p.y + 20);
+    });
+    (window.DEEPSKY || []).forEach(function (o) {
+      if (!(o.mn || o.cl)) return;
+      var hz = altAz(o.ra, o.dec, lst, lat);
+      if (hz.alt < 2) return;
+      var p = arProject(hz.alt, hz.az, b, W, H, f);
+      if (!p) return;
+      g.fillStyle = dsoColor(o.t); g.beginPath(); g.arc(p.x, p.y, 3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(190,214,255,.85)"; g.font = "10px ui-monospace,monospace";
+      g.textAlign = "left"; g.fillText(o.n, p.x + 5, p.y + 3);
+    });
+    // reticle
+    g.strokeStyle = "rgba(120,200,255,.8)"; g.lineWidth = 1.2;
+    g.beginPath(); g.arc(W / 2, H / 2, 12, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(W / 2 - 18, H / 2); g.lineTo(W / 2 - 5, H / 2);
+    g.moveTo(W / 2 + 5, H / 2); g.lineTo(W / 2 + 18, H / 2); g.stroke();
+    // HUD
+    var hud = document.getElementById("arhud");
+    if (hud) {
+      var alt = Math.asin(b.dir[2]) / D2R, azV = norm360(Math.atan2(b.dir[0], b.dir[1]) / D2R);
+      var compass = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+      hud.innerHTML = "<b>AR</b> · looking " + alt.toFixed(0) + "° " + compass[Math.round(azV / 22.5) % 16] +
+        " · " + isoDate(SYS.dateUTC) +
+        (AR.hasOri ? "" : " · no compass — drag to look") +
+        (AR.camErr ? " · camera unavailable (" + AR.camErr + ")" : "");
+    }
+  }
+  function enterAR() {
+    if (AR.active) return;
+    AR.active = true;
+    SYS.view = "ar";
+    document.body.classList.remove("system"); document.body.classList.add("armode");
+    planetGroup.visible = false;
+    sysGroup && (sysGroup.visible = false);
+    for (var si = 0; si < SYSB.length; si++) {
+      if (SYSB[si].labelEl) SYSB[si].labelEl.style.display = "none";
+      if (SYSB[si].tail) SYSB[si].tail.visible = false;
+    }
+    clearLabels(); setPlaying(false);
+    AR.oriT = performance.now(); AR.camErr = "";
+    window.addEventListener("deviceorientation", arOri);
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+        .then(function (s) { arStream = s; arVideo.srcObject = s; arVideo.play().catch(function () {}); })
+        .catch(function (e) { AR.camErr = (e && e.name) || "blocked"; });
+    } else AR.camErr = "unsupported";
+    if (location.hash !== "#ar") history.replaceState(null, "", "#ar");
+    setSysInfo("AR — point your camera at the sky");
+    arDraw();
+  }
+  function arStop() {
+    if (!AR.active) return;
+    AR.active = false;
+    if (AR.raf) { cancelAnimationFrame(AR.raf); AR.raf = 0; }
+    window.removeEventListener("deviceorientation", arOri);
+    if (arStream) { arStream.getTracks().forEach(function (t) { t.stop(); }); arStream = null; }
+    if (arVideo) arVideo.srcObject = null;
+    document.body.classList.remove("armode");
+  }
+  function exitAR() {
+    if (!AR.active) return;
+    arStop();
+    SYS.view = "globe";
+    enterGlobe(state.body);
+  }
   function enterSky() {
     if (SYS.view === "sky") return;
+    arStop();
     SYS.view = "sky";
     document.body.classList.remove("system");
     document.body.classList.add("sky");
@@ -4933,6 +5139,7 @@
   }
   function enterGlobe(id) {
     if (!BODIES[id]) return;
+    arStop();
     function swap() {
       SYS.camSaved = camera.position.clone();
       SYS.view = "globe";
@@ -5035,6 +5242,28 @@
   });
   document.getElementById("tel-host").value = TEL.host || "";
   telRender();
+  document.getElementById("arbtn").addEventListener("click", function () {
+    if (AR.active) exitAR(); else enterAR();
+  });
+  document.getElementById("arback").addEventListener("click", exitAR);
+  (function () {
+    var ac = document.getElementById("arcanvas");
+    ac.addEventListener("pointerdown", function (e) {
+      if (!AR.active) return;
+      AR.dragging = true; AR.lx = e.clientX; AR.ly = e.clientY; AR.manual = true;
+    });
+    ac.addEventListener("pointermove", function (e) {
+      if (!AR.active || !AR.dragging) return;
+      var dx = e.clientX - AR.lx, dy = e.clientY - AR.ly;
+      AR.lx = e.clientX; AR.ly = e.clientY;
+      var k = AR_FOV / Math.max(1, window.innerWidth);
+      AR.yaw = norm360(AR.yaw - dx * k);
+      AR.pitch = Math.max(-10, Math.min(88, AR.pitch + dy * k));
+    });
+    var up = function () { AR.dragging = false; };
+    ac.addEventListener("pointerup", up);
+    ac.addEventListener("pointercancel", up);
+  })();
   document.getElementById("nightbtn").addEventListener("click", function () {
     SET.night = !SET.night; saveSettings(); applyNight();
   });
@@ -5575,6 +5804,7 @@
   }
   function enterFlares() {
     if (SYS.view === "flare") return;
+    arStop();
     SYS.view = "flare";
     var cl = document.body.classList;
     cl.remove("system"); cl.remove("sky"); cl.remove("moonmode");
@@ -5653,6 +5883,12 @@
     TELSTATE: function () { return { host: TEL.host, connected: TEL.connected, name: TEL.name,
       ra: TEL.ra, dec: TEL.dec, alt: TEL.alt, az: TEL.az, slewing: TEL.slewing, err: TEL.err }; },
     TELGOTO: function (sync) { telGoto(sync); },
+    ARSKY: function (a, b, c) {
+      var v = arBasis(a || 0, b || 0, c || 0);
+      return { alt: Math.asin(Math.max(-1, Math.min(1, v.dir[2]))) / D2R,
+        az: norm360(Math.atan2(v.dir[0], v.dir[1]) / D2R) };
+    },
+    ARSTATE: function () { return { active: AR.active, hasOri: AR.hasOri, camErr: AR.camErr, yaw: AR.yaw, pitch: AR.pitch }; },
     SWLIVE: function () { return SWLIVE; },
     REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
