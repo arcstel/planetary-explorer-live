@@ -251,6 +251,10 @@
   #tonight .ev{color:#c9d6ea;font-size:12px;padding:3px 0;border-bottom:1px solid #101827}
   #tonight .ev .d{color:#ffd257;margin-right:8px}
   #tonight .tn-close{position:absolute;right:12px;top:10px;background:none;border:0;color:#61748e;font-size:14px;cursor:pointer;padding:4px 6px}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);z-index:80;
+    background:rgba(6,8,18,.92);border:1px solid #223046;border-radius:10px;padding:8px 16px;
+    color:#bff4fb;font-size:12px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .set-row{display:flex;align-items:center;gap:14px;justify-content:space-between;
     padding:9px 0;border-bottom:1px solid #16202f;font-size:12px;color:#93a7c6}
   .set-row:last-of-type{border-bottom:0}
@@ -619,6 +623,7 @@
         <option value="binocular">Binocular best</option>
       </select>
       <input id="trk-q" placeholder="filter…" autocomplete="off">
+      <button id="trk-export" title="Export this list as text">⤓</button>
     </div>
     <div id="trk-dso"></div>
     <h3>NEAREST STARS</h3><div id="trk-stars"></div>
@@ -637,6 +642,7 @@
   <div id="almfoot"></div>
 </div>
 <div id="fps"></div>
+<div id="toast"></div>
 
 <div id="aboutbox">
   <div class="ab-panel">
@@ -859,6 +865,7 @@
     <button class="tn-close" id="tonightclose">✕</button>
     <h2>FIRST LIGHT — TONIGHT</h2>
     <div id="tn-body"></div>
+    <button id="tn-share" style="margin-top:12px;margin-right:8px">Share / export plan</button>
     <button id="tonightclose2" style="margin-top:12px">Close</button>
   </div>
 </div>
@@ -4326,6 +4333,106 @@
     }
     document.getElementById("tn-body").innerHTML = html;
   }
+  function toast(m) {
+    var el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = m;
+    el.classList.add("on");
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.classList.remove("on"); }, 1800);
+  }
+  function danchorDownload(text, name) {
+    try {
+      var b = new Blob([text], { type: "text/plain" }), url = URL.createObjectURL(b);
+      var a = document.createElement("a");
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+      return true;
+    } catch (e) { return false; }
+  }
+  function copyText(text, msg, fname) {
+    var ok = function () { toast(msg || "Copied"); };
+    if (navigator.share) {
+      navigator.share({ title: "Planetary Explorer", text: text }).then(ok).catch(function () {});
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(function () {
+        toast(danchorDownload(text, fname) ? "Downloaded" : "Could not export");
+      });
+      return;
+    }
+    toast(danchorDownload(text, fname) ? "Downloaded" : "Could not export");
+  }
+  function tonightText() {
+    var jd = sysJD(), tz = CHART.tz, lat = CHART.lat, lon = CHART.lon;
+    var d = new Date(SYS.dateUTC), jd0 = Math.floor(jd) + 0.5;
+    var sun = dayEvents(sunRD, jd0, lat, lon, -0.833);
+    var dusk = dayEvents(sunRD, jd0, lat, lon, -18), dawn = dayEvents(sunRD, jd0 + 1, lat, lon, -18);
+    var moon = dayEvents(moonRD, jd0, lat, lon, 0.125);
+    var mph = moonPhase(jd), mg = moonGeom(jd), lst = lstDeg(jd, lon);
+    var compass = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+    var cp = function (az) { return compass[Math.round(norm360(az) / 22.5) % 16]; };
+    var L = [];
+    L.push("PLANETARY EXPLORER — tonight's observing plan");
+    L.push(fmtDate(SYS.dateUTC) + " · " + lat.toFixed(2) + "°, " + lon.toFixed(2) + "° · local " + hm(locH(((jd + 0.5) % 1) * 24, tz)));
+    L.push("");
+    L.push("DARKNESS: sunset " + (sun.set != null ? hm(locH(sun.set, tz)) : "—") +
+      ", sunrise " + (sun.rise != null ? hm(locH(sun.rise, tz)) : "—") +
+      ", astro dusk " + (dusk.set != null ? hm(locH(dusk.set, tz)) : "—") +
+      ", astro dawn " + (dawn.rise != null ? hm(locH(dawn.rise, tz)) : "—"));
+    L.push("MOON: " + mph.name + " " + Math.round(mph.illum * 100) + "% lit, rise " +
+      (moon.rise != null ? hm(locH(moon.rise, tz)) : "—") + " set " + (moon.set != null ? hm(locH(moon.set, tz)) : "—"));
+    L.push("");
+    L.push("UP NOW:");
+    [["moon", "☽"], ["jupiter", "♃"], ["saturn", "♄"], ["mars", "♂"], ["venus", "♀"], ["uranus", "♅"], ["neptune", "♆"]]
+      .forEach(function (b) {
+        var r = bodyRD(b[0], jd), hz = altAz(r.ra, r.dec, lst, lat);
+        if (hz.alt > 10) L.push("  " + b[0] + " — " + hz.alt.toFixed(0) + "° " + cp(hz.az));
+      });
+    var up = [];
+    (window.DEEPSKY || []).forEach(function (o) {
+      if (!(o.m != null && o.m <= 7.5)) return;
+      var hz = altAz(o.ra, o.dec, lst, lat);
+      if (hz.alt >= 30) up.push({ o: o, alt: hz.alt, az: hz.az });
+    });
+    up.sort(function (a, b) { return a.o.m - b.o.m; });
+    up.slice(0, 12).forEach(function (e) {
+      L.push("  " + e.o.n + " (" + e.o.t + ", mag " + e.o.m + ") — " + e.alt.toFixed(0) + "° " + cp(e.az));
+    });
+    var events = skyEventsMonth(d.getUTCFullYear(), d.getUTCMonth())
+      .filter(function (e) { return e.day >= d.getUTCDate(); }).slice(0, 5);
+    if (events.length) {
+      L.push("");
+      L.push("COMING UP:");
+      events.forEach(function (e) { L.push("  " + d.getUTCMonth() + 1 + "/" + e.day + " — " + e.text); });
+    }
+    return L.join("\n") + "\n";
+  }
+  function listText() {
+    var jd = sysJD(), lat = CHART.lat, lon = CHART.lon, lst = lstDeg(jd, lon);
+    var src = (window.DEEPSKY || []).filter(function (o) {
+      if (TRK.list === "favourites") return FAV[o.n];
+      if (TRK.list === "messier") return o.mn;
+      if (TRK.list === "caldwell") return o.cl;
+      return true;
+    }).filter(function (o) { return dsoMatches(o, TRK.q.trim()); });
+    if (TRK.list === "horizon") {
+      src = src.filter(function (o) { return altAz(o.ra, o.dec, lst, lat).alt > 0; });
+    }
+    var lines = src.slice(0, 150).map(function (o) {
+      var hz = altAz(o.ra, o.dec, lst, lat);
+      var raH = o.ra / 15, hh = Math.floor(raH), mm = Math.round((raH - hh) * 60);
+      var dec = o.dec, dd = Math.floor(Math.abs(dec)), dm = Math.round((Math.abs(dec) - dd) * 60);
+      return o.n + "\t" + o.t + "\tRA " + ("0" + hh).slice(-2) + "h" + ("0" + mm).slice(-2) + "m" +
+        " Dec " + (dec < 0 ? "-" : "+") + ("0" + dd).slice(-2) + "°" + ("0" + dm).slice(-2) + "'" +
+        "\tmag " + (o.m != null ? o.m : "—") + "\t" + hz.alt.toFixed(0) + "° " +
+        ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(norm360(hz.az) / 22.5) % 16];
+    });
+    return "PLANETARY EXPLORER — " + TRK.list + " list\n" +
+      new Date().toISOString().slice(0, 16).replace("T", " ") + " UT\n\n" +
+      lines.join("\n") + "\n";
+  }
 
   function drawPhaseMini(cv, phase) {
     var S = cv.width, r = S / 2 - 0.5, c = S / 2;
@@ -5455,6 +5562,12 @@
   document.getElementById("tonight").addEventListener("click", function (e) {
     if (e.target === this) tnClose();
   });
+  document.getElementById("tn-share").addEventListener("click", function () {
+    copyText(tonightText(), "Plan copied", "planetary-explorer-plan.txt");
+  });
+  document.getElementById("trk-export").addEventListener("click", function () {
+    copyText(listText(), "List copied", "planetary-explorer-list.txt");
+  });
   (function () {
     var adj = function (id, fn) { var b = document.getElementById(id); if (b) b.addEventListener("click", fn); };
     adj("ar-hl", function () { SET.arHead = ((SET.arHead || 0) - 1 + 360) % 360; saveSettings(); });
@@ -6106,6 +6219,8 @@
         az: norm360(Math.atan2(v.dir[0], v.dir[1]) / D2R) };
     },
     ARSTATE: function () { return { active: AR.active, hasOri: AR.hasOri, camErr: AR.camErr, yaw: AR.yaw, pitch: AR.pitch, arFov: SET.arFov, arHead: SET.arHead }; },
+    TONIGHT_TEXT: function () { return tonightText(); },
+    LIST_TEXT: function () { return listText(); },
     SWLIVE: function () { return SWLIVE; },
     REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
