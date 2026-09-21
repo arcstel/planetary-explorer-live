@@ -231,6 +231,26 @@
   #help code{background:#0d1626;border:1px solid #22334a;border-radius:4px;padding:0 4px;color:#bff4fb}
   #help .hp-note{color:#61748e;font-size:11px;line-height:1.6;margin:0 0 4px}
   #help .hp-close{position:absolute;right:12px;top:10px;background:none;border:0;color:#61748e;font-size:14px;cursor:pointer;padding:4px 6px}
+  #tonight{position:fixed;inset:0;z-index:64;display:none;place-items:center;background:rgba(2,2,8,.82);padding:18px}
+  #tonight.open{display:grid}
+  #tonight .tn-panel{max-width:660px;max-height:90vh;overflow:auto;position:relative;
+    background:#0a1120;border:1px solid #223046;border-radius:16px;padding:22px 24px}
+  #tonight h2{color:#35d0e0;font-size:16px;margin:0 0 4px}
+  #tonight h3{color:#ffb454;font-size:12px;letter-spacing:.5px;margin:16px 0 6px}
+  #tonight .sub{color:#61748e;font-size:11.5px;margin:0 0 10px}
+  #tonight .chk{display:flex;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid #16202f;font-size:12.5px}
+  #tonight .chk .st{width:16px;text-align:center}
+  #tonight .chk.ok .st{color:#4fd18b}
+  #tonight .chk.no .st{color:#ffb454}
+  #tonight .chk .k{color:#93a7c6;min-width:150px}
+  #tonight .chk .v{color:#dfe6ff}
+  #tonight .chk .hint{color:#61748e;font-size:11px}
+  #tonight .twocol{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}
+  #tonight .r{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid #101827;font-size:12px;color:#93a7c6}
+  #tonight .r b{color:#dfe6ff;font-weight:400}
+  #tonight .ev{color:#c9d6ea;font-size:12px;padding:3px 0;border-bottom:1px solid #101827}
+  #tonight .ev .d{color:#ffd257;margin-right:8px}
+  #tonight .tn-close{position:absolute;right:12px;top:10px;background:none;border:0;color:#61748e;font-size:14px;cursor:pointer;padding:4px 6px}
   .set-row{display:flex;align-items:center;gap:14px;justify-content:space-between;
     padding:9px 0;border-bottom:1px solid #16202f;font-size:12px;color:#93a7c6}
   .set-row:last-of-type{border-bottom:0}
@@ -439,6 +459,7 @@
   <button id="nightbtn" title="Night mode — dim everything to red for dark adaptation">🔴 Night</button>
   <button id="settingsbtn" title="Special settings — zoom speed, auto-rotate and more">⚙ Settings</button>
   <button id="helpbtn" title="Setup and help — telescope and AR">❔ Help</button>
+  <button id="tonightbtn" title="First light — tonight's observing checklist">🌙 Tonight</button>
   <button id="about" title="Credits and licences">ⓘ About</button>
 </div>
 
@@ -830,6 +851,15 @@
     <p class="hp-note">Every map, star, label and catalogue is bundled in the app.
        No account, no ads, no tracking.</p>
     <button id="helpclose2" style="margin-top:12px">Close</button>
+  </div>
+</div>
+
+<div id="tonight">
+  <div class="tn-panel">
+    <button class="tn-close" id="tonightclose">✕</button>
+    <h2>FIRST LIGHT — TONIGHT</h2>
+    <div id="tn-body"></div>
+    <button id="tonightclose2" style="margin-top:12px">Close</button>
   </div>
 </div>
 
@@ -4217,6 +4247,86 @@
     return ev;
   }
 
+  // ---- first light: tonight's observing checklist ----
+  function tnChk(ok, k, v, hint) {
+    return "<div class='chk " + (ok ? "ok" : "no") + "'><span class='st'>" + (ok ? "✓" : "○") +
+      "</span><span class='k'>" + k + "</span><span class='v'>" + v +
+      (hint ? " <span class='hint'>" + hint + "</span>" : "") + "</span></div>";
+  }
+  function renderTonight() {
+    var jd = sysJD(), tz = CHART.tz, lat = CHART.lat, lon = CHART.lon;
+    var d = new Date(SYS.dateUTC);
+    var jd0 = Math.floor(jd) + 0.5;
+    var sun = dayEvents(sunRD, jd0, lat, lon, -0.833);
+    var dusk = dayEvents(sunRD, jd0, lat, lon, -18), dawn = dayEvents(sunRD, jd0 + 1, lat, lon, -18);
+    var moon = dayEvents(moonRD, jd0, lat, lon, 0.125);
+    var mph = moonPhase(jd), mg = moonGeom(jd);
+    var lst = lstDeg(jd, lon);
+    var bodies = [];
+    [["moon", "☽"], ["jupiter", "♃"], ["saturn", "♄"], ["mars", "♂"], ["venus", "♀"], ["uranus", "♅"], ["neptune", "♆"]]
+      .forEach(function (b) {
+        var r = bodyRD(b[0], jd), hz = altAz(r.ra, r.dec, lst, lat);
+        if (hz.alt > 10) bodies.push({ n: b[1] + " " + b[0], alt: hz.alt, az: hz.az });
+      });
+    bodies.sort(function (a, b) { return b.alt - a.alt; });
+    var up = [];
+    (window.DEEPSKY || []).forEach(function (o) {
+      if (!(o.m != null && o.m <= 7.5)) return;
+      var hz = altAz(o.ra, o.dec, lst, lat);
+      if (hz.alt >= 30) up.push({ o: o, alt: hz.alt, az: hz.az });
+    });
+    up.sort(function (a, b) { return a.o.m - b.o.m; });
+    var events = skyEventsMonth(d.getUTCFullYear(), d.getUTCMonth())
+      .filter(function (e) { return e.day >= d.getUTCDate(); }).slice(0, 5);
+    var compass = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+    var cp = function (az) { return compass[Math.round(norm360(az) / 22.5) % 16]; };
+    var camOk = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    var oriOk = ("DeviceOrientationEvent" in window);
+    var moonBright = mph.illum > 0.55;
+
+    var html = "<div class='sub'>" + fmtDate(SYS.dateUTC) + " · " + lat.toFixed(2) + "°, " + lon.toFixed(2) +
+      "° · local " + hm(locH(((jd + 0.5) % 1) * 24, tz)) + "</div>";
+    html += tnChk(true, "Location & time", lat.toFixed(2) + "°, " + lon.toFixed(2) + "°", "UTC" + (tz >= 0 ? "+" : "") + tz + " — set in ✦ Astrology");
+    html += tnChk(!!TEL.connected, "Telescope", TEL.connected ? TEL.name : "not connected",
+      TEL.connected ? "" : "Sky tracker → Telescope");
+    html += tnChk(camOk, "Camera (AR)", camOk ? "available" : "unavailable");
+    html += tnChk(oriOk, "Motion / compass", oriOk ? "available" : "unavailable", oriOk ? "" : "drag-to-look in AR");
+    html += tnChk(!!SET.night, "Night mode (red)", SET.night ? "on" : "off", SET.night ? "" : "tap 🔴 Night");
+    html += tnChk(!moonBright, "Dark sky", moonBright ? "moon " + Math.round(mph.illum * 100) + "% lit" : "good — moon " +
+      Math.round(mph.illum * 100) + "%", moonBright ? "bright moon washes out faint objects" : "");
+
+    html += "<h3>DARKNESS TONIGHT</h3><div class='twocol'>" +
+      "<div class='r'><span>Sunset</span><b>" + (sun.set != null ? hm(locH(sun.set, tz)) : "—") + "</b></div>" +
+      "<div class='r'><span>Sunrise</span><b>" + (sun.rise != null ? hm(locH(sun.rise, tz)) : "—") + "</b></div>" +
+      "<div class='r'><span>Astro dusk</span><b>" + (dusk.set != null ? hm(locH(dusk.set, tz)) : "—") + "</b></div>" +
+      "<div class='r'><span>Astro dawn</span><b>" + (dawn.rise != null ? hm(locH(dawn.rise, tz)) : "—") + "</b></div>" +
+      "</div>";
+
+    html += "<h3>MOON</h3><div class='twocol'>" +
+      "<div class='r'><span>Phase</span><b>" + mph.name + "</b></div>" +
+      "<div class='r'><span>Illumination</span><b>" + Math.round(mph.illum * 100) + "%</b></div>" +
+      "<div class='r'><span>Rise · Set</span><b>" + (moon.rise != null ? hm(locH(moon.rise, tz)) : "—") + " · " +
+        (moon.set != null ? hm(locH(moon.set, tz)) : "—") + "</b></div>" +
+      "<div class='r'><span>Distance · size</span><b>" + (mg.dist / 1000).toFixed(0) + "k km · " + mg.angdia.toFixed(2) + "°</b></div>" +
+      "</div>";
+
+    html += "<h3>UP NOW (altitude · bearing)</h3><div class='twocol'><div>" +
+      (bodies.length ? bodies.map(function (b) {
+        return "<div class='r'><span>" + b.n + "</span><b>" + b.alt.toFixed(0) + "° " + cp(b.az) + "</b></div>";
+      }).join("") : "<div class='r'><span>No bright planets above 10°.</span></div>") +
+      "</div><div>" +
+      (up.length ? up.slice(0, 7).map(function (e) {
+        return "<div class='r'><span>" + e.o.n + " <span class='hint'>" + e.o.t + "</span></span><b>" +
+          e.alt.toFixed(0) + "° " + cp(e.az) + "</b></div>";
+      }).join("") : "<div class='r'><span>No bright deep-sky above 30°.</span></div>") +
+      "</div></div>";
+    if (events.length) {
+      html += "<h3>COMING UP THIS MONTH</h3>" +
+        events.map(function (e) { return "<div class='ev'><span class='d'>" + e.day + "</span>" + e.text + "</div>"; }).join("");
+    }
+    document.getElementById("tn-body").innerHTML = html;
+  }
+
   function drawPhaseMini(cv, phase) {
     var S = cv.width, r = S / 2 - 0.5, c = S / 2;
     var g = cv.getContext("2d");
@@ -5334,6 +5444,16 @@
   });
   document.getElementById("help").addEventListener("click", function (e) {
     if (e.target === this) this.classList.remove("open");
+  });
+  document.getElementById("tonightbtn").addEventListener("click", function () {
+    renderTonight();
+    document.getElementById("tonight").classList.add("open");
+  });
+  var tnClose = function () { document.getElementById("tonight").classList.remove("open"); };
+  document.getElementById("tonightclose").addEventListener("click", tnClose);
+  document.getElementById("tonightclose2").addEventListener("click", tnClose);
+  document.getElementById("tonight").addEventListener("click", function (e) {
+    if (e.target === this) tnClose();
   });
   (function () {
     var adj = function (id, fn) { var b = document.getElementById(id); if (b) b.addEventListener("click", fn); };
