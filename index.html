@@ -632,9 +632,9 @@
         <b>Favourites</b> list, or browse the built-in Messier, Caldwell and
         binocular-best lists. The same panel shows
         <b>Jupiter's moons</b> (Io, Europa, Ganymede, Callisto positioned from
-        their real orbital periods) and <b>Saturn's rings</b> with their true
-        opening angle and Titan. <b>Night mode</b> (🔴) dims the whole interface
-        to red.</p>
+        their real orbital periods, with transits, occultations and shadow
+        transits marked) and <b>Saturn's rings</b> with their true opening angle
+        and Titan. <b>Night mode</b> (🔴) dims the whole interface to red.</p>
     <p><b>Telescope (🧭 Sky tracker → Telescope):</b> connect to an
         <b>ASCOM Alpaca</b> mount on your own network by entering its address
         (host:port), then <b>GoTo</b> the selected object or <b>Sync</b> on it,
@@ -4360,7 +4360,7 @@
       .then(function () { telRender((sync ? "Synced to " : "Slewing to ") + o.n); return telPoll(); })
       .catch(function (e) { TEL.err = String(e.message || e); telRender(); });
   }
-  var trkStatic = document.createElement("canvas"), trkKey = "", trkData = null;
+  var trkStatic = document.createElement("canvas"), trkKey = "", trkData = null, jupStates = [];
   var DSO_COLOR = {
     "galaxy": "#ff9ad0", "open cluster": "#8fd7ff", "globular cluster": "#ffd257",
     "planetary nebula": "#7bf0c0", "nebula": "#9fe08f", "emission nebula": "#9fe08f",
@@ -4446,6 +4446,33 @@
       f.moonX = R * Math.cos(th); f.moonY = R * Math.sin(th); f.R = R;
     });
     return f;
+  }
+  // Per-moon state: on the disk in front (transit) or behind (occultation), and
+  // whether its shadow falls on the disk (ray from the Sun through the moon).
+  function jupiterMoonStates(jd) {
+    var frame = orbitFrame("jupiter", jd, JUP_POLE), out = [];
+    var jupHelio = new THREE.Vector3(); planetHelio("jupiter", jd, jupHelio);
+    var jupEq = eclToEq(jupHelio, jd), RjAU = 69911 / AU_KM;
+    CIRC_MOONS.forEach(function (cm) {
+      if (cm.host !== "jupiter") return;
+      var R = GAL_R[cm.id], th = (cm.phase + 360 * (jd - 2451544.5) / cm.period) * D2R;
+      var offR = frame.n1.clone().multiplyScalar(R * Math.cos(th)).add(frame.n2.clone().multiplyScalar(R * Math.sin(th)));
+      var x = offR.dot(frame.right), y = offR.dot(frame.up), z = offR.dot(frame.u);
+      var rr = Math.sqrt(x * x + y * y);
+      // frame.u points Earth->Jupiter, so a moon on the Earth-facing (near) side
+      // has z < 0, and the same holds for the shadow on the visible disk.
+      var state = rr < 1 ? (z < 0 ? "transit" : "occulted") : "beside";
+      var offEq = offR.multiplyScalar(RjAU), moonEq = jupEq.clone().add(offEq);
+      var d = moonEq.normalize(), b = d.dot(jupEq), c = jupEq.lengthSq() - RjAU * RjAU, disc = b * b - c;
+      var shadow = null;
+      if (disc > 0) {
+        var sp = d.multiplyScalar(b - Math.sqrt(disc)).sub(jupEq);
+        var sx = sp.dot(frame.right) / RjAU, sy = sp.dot(frame.up) / RjAU, sz = sp.dot(frame.u) / RjAU;
+        if (sz < 0 && sx * sx + sy * sy < 1) shadow = { x: sx, y: sy };
+      }
+      out.push({ id: cm.id, label: cm.label, km: GAL_KM[cm.id], x: x, y: y, z: z, state: state, shadow: shadow });
+    });
+    return out;
   }
   // Render the fixed part of the sky (grid, constellations, stars, deep sky,
   // bodies) once, into an offscreen canvas, so the 5,000-star chart can blit at
@@ -4719,25 +4746,32 @@
     if (cv) {
       var g = cv.getContext("2d"), W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
       g.clearRect(0, 0, W, H); g.fillStyle = "#0a1120"; g.fillRect(0, 0, W, H);
-      var moons = jupiterMoons(jd), scale = (W / 2 - 22) / 26.29, jr = 8;
+      var moons = jupiterMoonStates(jd), scale = (W / 2 - 22) / 26.29, jr = 8;
       g.strokeStyle = "rgba(90,120,170,.25)"; g.lineWidth = 1;
       g.beginPath(); g.moveTo(6, cy); g.lineTo(W - 6, cy); g.stroke();
       var grd = g.createRadialGradient(cx - jr * 0.3, cy - jr * 0.3, jr * 0.2, cx, cy, jr);
       grd.addColorStop(0, "#f2e2b8"); grd.addColorStop(1, "#b98a52");
       g.fillStyle = grd; g.beginPath(); g.arc(cx, cy, jr, 0, Math.PI * 2); g.fill();
+      // moon shadows on the Jovian disk
+      moons.forEach(function (m) {
+        if (!m.shadow) return;
+        g.fillStyle = "rgba(20,12,6,.85)";
+        g.beginPath(); g.arc(cx + m.shadow.x * jr, cy - m.shadow.y * jr, 1.7, 0, Math.PI * 2); g.fill();
+      });
       g.fillStyle = "#61748e"; g.font = "8px ui-monospace,monospace";
       g.textAlign = "left"; g.fillText("E", 3, cy - 4);
       g.textAlign = "right"; g.fillText("W", W - 3, cy - 4);
       moons.forEach(function (m) {
         var px = cx + m.x * scale, py = cy - m.y * scale;
         var size = 2 + (m.km / 2634.1) * 2.4;
-        g.globalAlpha = m.z >= 0 ? 1 : 0.5;
+        g.globalAlpha = m.z < 0 ? 1 : 0.5;
         g.fillStyle = "#dfe6ff";
         g.beginPath(); g.arc(px, py, size, 0, Math.PI * 2); g.fill();
         g.globalAlpha = 1;
         g.fillStyle = "#93a7c6"; g.font = "8.5px ui-monospace,monospace"; g.textAlign = "center";
         g.fillText(m.label, px, H - 3);
       });
+      jupStates = moons;
     }
     var cv2 = document.getElementById("trk-sat");
     if (cv2) {
@@ -4764,8 +4798,18 @@
       g2.fillText("ring opening " + (st.B >= 0 ? "+" : "") + st.B.toFixed(1) + "°", 6, H2 - 5);
     }
     var info = document.getElementById("trk-planetinfo");
-    if (info) info.innerHTML = "<div class='fnote'>Positions computed from our own " +
-      "orbital model (Galilean periods accurate; configuration approximate).</div>";
+    if (info) {
+      var parts = [];
+      jupStates.forEach(function (m) {
+        if (m.state === "transit") parts.push(m.label + " on the disk");
+        else if (m.state === "occulted") parts.push(m.label + " behind Jupiter");
+        if (m.shadow) parts.push(m.label + " shadow on the disk");
+      });
+      info.innerHTML = (parts.length
+        ? "<div class='r'><span>Now</span><b style='text-align:right'>" + parts.join(" · ") + "</b></div>"
+        : "") +
+        "<div class='fnote'>Galilean positions from our own model (periods accurate; configuration approximate).</div>";
+    }
   }
   function enterTracker() {
     if (SYS.view === "tracker") return;
@@ -5602,6 +5646,7 @@
     },
     EVENTS: function (y, m) { return skyEventsMonth(y || new Date().getUTCFullYear(), m == null ? new Date().getUTCMonth() : m); },
     JUPMOONS: function (jd) { return jupiterMoons(jd || sysJD()); },
+    JUPEVENTS: function (jd) { return jupiterMoonStates(jd || sysJD()); },
     SATURN: function (jd) { var s = saturnTilt(jd || sysJD()); return { B: s.B }; },
     FAVS: function () { return Object.keys(FAV); },
     TOGGLEFAV: function (n) { toggleFav(n); return Object.keys(FAV); },
