@@ -359,6 +359,7 @@
   #trk-dso .dso b{color:#dfe6ff;font-weight:400}
   #trk-dso .dso .ty{color:#61748e;font-size:10px}
   #trk-curvecv{width:100%;height:auto;background:#0a1120;border-radius:6px;display:block;margin-top:6px}
+  .dsoimg{width:100%;height:auto;border-radius:8px;display:block;margin:4px 0 2px;border:1px solid #16202f}
   #trk-plan .r{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid #101827}
   #trk-plan .r b{color:#dfe6ff;font-weight:400}
   body.almanac #c,body.almanac #skycanvas{display:none}
@@ -466,6 +467,7 @@
   <button id="reset" title="Reset view">⌂ Reset</button>
   <button id="codexbtn" title="Codex — history and naming of this world">📜 Codex</button>
   <button id="nightbtn" title="Night mode — dim everything to red for dark adaptation">🔴 Night</button>
+  <button id="musicbtn" title="Ambient music — a soft generated loop">🎵 Music</button>
   <button id="settingsbtn" title="Special settings — zoom speed, auto-rotate and more">⚙ Settings</button>
   <button id="helpbtn" title="Setup and help — telescope and AR">❔ Help</button>
   <button id="tonightbtn" title="First light — tonight's observing checklist">🌙 Tonight</button>
@@ -496,6 +498,10 @@
       <input id="set-fps" type="checkbox"></div>
     <div class="set-row"><span>Live space-weather updates (only when online)</span>
       <input id="set-swlive" type="checkbox"></div>
+    <div class="set-row"><span>Ambient music</span>
+      <input id="set-music" type="checkbox"></div>
+    <div class="set-row"><span>Music volume</span>
+      <input id="set-musicvol" type="range" min="0" max="80" step="5"></div>
     <div class="set-row"><span>Restore defaults</span>
       <button id="set-reset">Reset settings</button></div>
     <button id="settingsclose">Close</button>
@@ -861,6 +867,10 @@
     <p class="hp-note">Optional. Off by default — enable it in ⚙ Settings or from
        the first‑run tour to refresh the Sun's active regions from NOAA. Only
        public data is downloaded.</p>
+    <h3>🔵 Ambient music</h3>
+    <p class="hp-note">The <b>🎵 Music</b> button plays a soft, generated ambient
+       loop — written by us and bundled offline, so there is no streaming and no
+       licence. Adjust the level in ⚙ Settings.</p>
     <h3>Offline</h3>
     <p class="hp-note">Every map, star, label and catalogue is bundled in the app.
        No account, no ads, no tracking.</p>
@@ -971,6 +981,7 @@
 <script src="constellations.js"></script>
 <script src="deepsky.js"></script>
 <script src="meteors.js"></script>
+<script src="dso_images.js"></script>
 <script src="spaceweather.js"></script>
 <script>
 (function () {
@@ -1104,7 +1115,8 @@
   // ---- special settings (persisted) ----
   var SET = { zoomSpeed: 1, spinOnOpen: true, reduceMotion: false,
     maxLabels: 150, detail: true, hq: true, wake: false, fps: false,
-    swLive: false, swAsked: false, welcome: false, night: false, arFov: 62, arHead: 0 };
+    swLive: false, swAsked: false, welcome: false, night: false, arFov: 62, arHead: 0,
+    music: false, musicVol: 0.35 };
   (function () {
     try {
       var raw = localStorage.getItem("pe.settings");
@@ -1120,6 +1132,55 @@
     var b = document.getElementById("nightbtn");
     if (b) b.classList.toggle("on", !!SET.night);
   }
+  // ---- ambient soundtrack (generated loop, bundled offline) ----
+  var MUSIC = { el: null, fade: 0, want: false };
+  function applyMusic() {
+    var b = document.getElementById("musicbtn");
+    if (b) b.classList.toggle("on", !!SET.music);
+    if (SET.music) startMusic(); else stopMusic();
+  }
+  function startMusic() {
+    if (MUSIC.el) { MUSIC.want = true; fadeMusic(SET.musicVol); return; }
+    try {
+      var el = document.createElement("audio");
+      el.loop = true; el.preload = "auto"; el.volume = 0;
+      el.setAttribute("playsinline", "");
+      var srcs = ["assets/audio/ambient.ogg", "assets/audio/ambient.m4a"];
+      srcs.forEach(function (s) {
+        var c = document.createElement("source");
+        c.src = s;
+        c.type = s.indexOf(".ogg") >= 0 ? "audio/ogg" : "audio/mp4";
+        el.appendChild(c);
+      });
+      document.body.appendChild(el);
+      MUSIC.el = el; MUSIC.want = true;
+      var p = el.play();
+      if (p && p.catch) p.catch(function () { /* autoplay blocked; will start on tap */ });
+      fadeMusic(SET.musicVol);
+    } catch (e) {}
+  }
+  function stopMusic() {
+    MUSIC.want = false;
+    if (!MUSIC.el) return;
+    fadeMusic(0, function () {
+      try { MUSIC.el.pause(); document.body.removeChild(MUSIC.el); } catch (e) {}
+      MUSIC.el = null;
+    });
+  }
+  function fadeMusic(target, done) {
+    if (MUSIC.fade) { clearInterval(MUSIC.fade); MUSIC.fade = 0; }
+    MUSIC.fade = setInterval(function () {
+      if (!MUSIC.el) { clearInterval(MUSIC.fade); MUSIC.fade = 0; return; }
+      var v = MUSIC.el.volume, d = target - v;
+      if (Math.abs(d) < 0.02) {
+        MUSIC.el.volume = Math.max(0, Math.min(1, target));
+        clearInterval(MUSIC.fade); MUSIC.fade = 0;
+        if (done) done();
+        return;
+      }
+      MUSIC.el.volume = Math.max(0, Math.min(1, v + d * 0.15));
+    }, 60);
+  }
   var wakeLock = null;
   function applyWake() {
     try {
@@ -1133,6 +1194,7 @@
     renderer.setPixelRatio(SET.hq ? Math.min(window.devicePixelRatio, 2) : 1);
     applyWake();
     applyNight();
+    applyMusic();
     document.getElementById("fps").style.display = SET.fps ? "block" : "none";
     if (motionOff() && spinWanted) setSpin(false);
     var z = document.getElementById("set-zoom");
@@ -1148,6 +1210,11 @@
       document.getElementById("set-fps").checked = SET.fps;
       var sw = document.getElementById("set-swlive");
       if (sw) sw.checked = SET.swLive;
+      var mu = document.getElementById("set-music");
+      if (mu) {
+        mu.checked = SET.music;
+        document.getElementById("set-musicvol").value = Math.round((SET.musicVol || 0.35) * 100);
+      }
     }
   }
   if (REDUCE_MOTION) setSpin(false); else syncSpinBtn();
@@ -2305,11 +2372,17 @@
     bind("set-wake", "wake");
     bind("set-fps", "fps");
     bind("set-swlive", "swLive");
+    bind("set-music", "music");
+    bind("set-musicvol", "musicVol", function (e) { return (+e.value) / 100; });
     document.getElementById("set-reset").addEventListener("click", function () {
       SET.zoomSpeed = 1; SET.spinOnOpen = true; SET.reduceMotion = false;
       SET.maxLabels = 150; SET.detail = true; SET.hq = true;
       SET.wake = false; SET.fps = false; SET.swLive = false;
+      SET.music = false; SET.musicVol = 0.35;
       saveSettings(); applySettings();
+    });
+    document.getElementById("set-musicvol").addEventListener("input", function () {
+      if (MUSIC.el) fadeMusic(SET.musicVol);
     });
   })();
   applySettings();
@@ -2351,6 +2424,10 @@
           "snapshot.</p><p>Would you like it to refresh from NOAA when you have a " +
           "connection? Only public data is downloaded — nothing about you is ever sent. " +
           "You can change this any time in ⚙ Settings.</p>", weather: true },
+      { glyph: "🎵", title: "Settle in",
+        html: "<p>For a calmer mood, <b>🎵 Music</b> plays a soft ambient tone — a " +
+          "generated loop that ships offline. Toggle it any time from the bar, or set " +
+          "the level in ⚙ Settings.</p>" },
       { glyph: "🔭", title: "Point it at the sky",
         html: "<p>Open <b>📷 AR</b> to overlay the chart on your camera, and " +
           "<b>🧭 Sky tracker → Telescope</b> to drive an ASCOM Alpaca mount " +
@@ -5163,7 +5240,11 @@
       var cur = dsoAlt(sel, jd, lat, lon), curAz = altAz(sel.ra, sel.dec, lst, lat).az;
       planh.style.display = ""; plan.style.display = "";
       document.getElementById("trk-planname").textContent = sel.n + " · " + sel.t;
+      var img = window.DSO_IMAGES && DSO_IMAGES[sel.n];
       plan.innerHTML =
+        (img ? "<a href='" + img.f + "' target='_blank' rel='noopener'><img class='dsoimg' src='" + img.f +
+          "' alt='" + sel.n + "' loading='lazy'></a><div class='fnote' style='margin:-2px 0 6px'>Image: " +
+          (img.c || "public domain") + "</div>" : "") +
         "<div class='r'><span>Now</span><b>" + (cur > 0 ? cur.toFixed(0) + "° " + compass(curAz) : "below horizon") + "</b></div>" +
         "<div class='r'><span>Transit</span><b>" + trkHM(rts.transit) + " · " + rts.maxAlt.toFixed(0) + "°</b></div>" +
         "<div class='r'><span>Rise" + (rts.rise === null ? "" : " · Set") + "</span><b>" +
@@ -5747,6 +5828,9 @@
   })();
   document.getElementById("nightbtn").addEventListener("click", function () {
     SET.night = !SET.night; saveSettings(); applyNight();
+  });
+  document.getElementById("musicbtn").addEventListener("click", function () {
+    SET.music = !SET.music; saveSettings(); applyMusic();
   });
   document.getElementById("almbtn").addEventListener("click", function () {
     if (SYS.view === "almanac") exitAlmanac(); else enterAlmanac();
@@ -6380,6 +6464,7 @@
     ARSTATE: function () { return { active: AR.active, hasOri: AR.hasOri, camErr: AR.camErr, yaw: AR.yaw, pitch: AR.pitch, arFov: SET.arFov, arHead: SET.arHead }; },
     TONIGHT_TEXT: function () { return tonightText(); },
     LIST_TEXT: function () { return listText(); },
+    MUSIC: function () { return { on: !!SET.music, playing: !!(MUSIC.el && !MUSIC.el.paused), vol: MUSIC.el ? MUSIC.el.volume : 0 }; },
     SWLIVE: function () { return SWLIVE; },
     REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
