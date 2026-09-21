@@ -279,6 +279,12 @@
   body.night #night{display:block}
   body.night #c,body.night #skycanvas,body.night #flarecanvas{filter:saturate(.15) brightness(.85)}
   #trk-dso{max-height:260px;overflow:auto}
+  #trk-objctl{display:flex;gap:6px;margin:0 0 6px}
+  #trk-objctl select{flex:1 1 auto;font-size:10.5px;padding:3px 4px;background:#0d1626;color:#c9d6ea;border:1px solid #22334a;border-radius:6px}
+  #trk-objctl input{flex:1 1 auto;font-size:10.5px;padding:3px 6px;width:auto}
+  #trk-dso .star{color:#3f5670;cursor:pointer;padding:0 3px;flex:0 0 auto}
+  #trk-dso .star.on{color:#ffd257}
+  #trk-dso .star:hover{color:#8fc3ff}
   #trk-dso .dso{display:flex;justify-content:space-between;gap:6px;padding:2px 3px;
     border-bottom:1px solid #101827;cursor:pointer;border-radius:5px}
   #trk-dso .dso:hover{background:rgba(120,150,220,.14)}
@@ -523,7 +529,18 @@
     <h3>JUPITER'S MOONS</h3><canvas id="trk-jup" width="290" height="80"></canvas>
     <h3>SATURN'S RINGS</h3><canvas id="trk-sat" width="290" height="96"></canvas>
     <div id="trk-planetinfo"></div>
-    <h3>DEEP SKY <input id="trk-q" placeholder="filter…" autocomplete="off" style="width:110px;font-size:10px;padding:2px 5px;float:right"></h3><div id="trk-dso"></div>
+    <h3>OBJECTS</h3>
+    <div id="trk-objctl">
+      <select id="trk-list">
+        <option value="horizon">Above horizon</option>
+        <option value="favourites">★ Favourites</option>
+        <option value="messier">Messier</option>
+        <option value="caldwell">Caldwell</option>
+        <option value="binocular">Binocular best</option>
+      </select>
+      <input id="trk-q" placeholder="filter…" autocomplete="off">
+    </div>
+    <div id="trk-dso"></div>
     <h3>NEAREST STARS</h3><div id="trk-stars"></div>
   </div>
 </div>
@@ -596,7 +613,9 @@
         plus 1,900 deep-sky objects (OpenNGC, CC BY-SA): every Messier and
         Caldwell and bright NGC/IC clusters, nebulae and galaxies. Filter the
         list and pick one for a <b>Tonight</b> plan: rise, transit, set, maximum
-        altitude and a 24-hour altitude curve. The same panel shows
+        altitude and a 24-hour altitude curve. Star any object to build your own
+        <b>Favourites</b> list, or browse the built-in Messier, Caldwell and
+        binocular-best lists. The same panel shows
         <b>Jupiter's moons</b> (Io, Europa, Ganymede, Callisto positioned from
         their real orbital periods) and <b>Saturn's rings</b> with their true
         opening angle and Titan. <b>Night mode</b> (🔴) dims the whole interface
@@ -4221,7 +4240,18 @@
     return { alt: alt / D2R, az: norm360(az / D2R) };
   }
   // ---- deep-sky helpers (tracker) ----
-  var trkDirty = true, TRK = { sel: null, q: "" };
+  var trkDirty = true, TRK = { sel: null, q: "", list: "horizon" };
+  // ---- observing lists / favourites (persisted on device) ----
+  function loadFavs() {
+    try {
+      var a = JSON.parse(localStorage.getItem("pe.favs") || "[]"), m = {};
+      if (Object.prototype.toString.call(a) === "[object Array]") a.forEach(function (n) { m[n] = 1; });
+      return m;
+    } catch (e) { return {}; }
+  }
+  function saveFavs() { try { localStorage.setItem("pe.favs", JSON.stringify(Object.keys(FAV))); } catch (e) {} }
+  var FAV = loadFavs();
+  function toggleFav(n) { if (FAV[n]) delete FAV[n]; else FAV[n] = 1; saveFavs(); trkDirty = true; }
   var trkStatic = document.createElement("canvas"), trkKey = "", trkData = null;
   var DSO_COLOR = {
     "galaxy": "#ff9ad0", "open cluster": "#8fd7ff", "globular cluster": "#ffd257",
@@ -4483,16 +4513,31 @@
       return "<div class='r'><span class='pl'>" + o.sym + " " + o.n + "</span><b>" +
         o.alt.toFixed(0) + "° " + compass(o.az) + "</b></div>";
     }).join("") : "<div class='r'><span>Nothing above the horizon.</span></div>";
-    // deep-sky list (filtered, brightest/highest first)
+    // object list for the chosen preset, filtered and sorted by altitude
     var q = TRK.q.trim();
-    var list = dsoUp.filter(function (e) { return dsoMatches(e.o, q); });
+    var proj = function (o) { var hz = altAz(o.ra, o.dec, lst, lat); return { o: o, alt: hz.alt, az: hz.az }; };
+    var src;
+    if (TRK.list === "favourites") src = (window.DEEPSKY || []).filter(function (o) { return FAV[o.n]; }).map(proj);
+    else if (TRK.list === "messier") src = (window.DEEPSKY || []).filter(function (o) { return o.mn; }).map(proj);
+    else if (TRK.list === "caldwell") src = (window.DEEPSKY || []).filter(function (o) { return o.cl; }).map(proj);
+    else if (TRK.list === "binocular") src = (window.DEEPSKY || []).filter(function (o) {
+      return o.m != null && o.m <= 8 && (o.t.indexOf("cluster") >= 0 || o.t.indexOf("nebula") >= 0 || o.t === "galaxy");
+    }).map(proj);
+    else src = dsoUp;
+    var list = src.filter(function (e) { return dsoMatches(e.o, q); });
     list.sort(function (a, b) { return (b.alt - a.alt); });
-    document.getElementById("trk-dso").innerHTML = list.slice(0, 60).map(function (e) {
-      var o = e.o;
+    document.getElementById("trk-dso").innerHTML = list.slice(0, 150).map(function (e) {
+      var o = e.o, up = e.alt > 0;
       return "<div class='dso" + (TRK.sel === o.n ? " sel" : "") + "' data-n='" + o.n + "'>" +
-        "<span><b>" + o.n + "</b> <span class='ty'>" + o.t + "</span></span>" +
-        "<span>" + e.alt.toFixed(0) + "° " + compass(e.az) + "</span></div>";
-    }).join("") || "<div class='fnote' style='padding:4px 0'>Nothing above the horizon.</div>";
+        "<span class='star" + (FAV[o.n] ? " on" : "") + "' data-fav='" + o.n + "'>" + (FAV[o.n] ? "★" : "☆") + "</span>" +
+        "<span style='flex:1 1 auto'><b>" + o.n + "</b> <span class='ty'>" + o.t + "</span></span>" +
+        "<span>" + (up ? e.alt.toFixed(0) + "° " + compass(e.az) : "↓" + e.alt.toFixed(0) + "°") + "</span></div>";
+    }).join("") || "<div class='fnote' style='padding:4px 0'>" +
+      (TRK.list === "favourites" && !Object.keys(FAV).length ? "No favourites yet — tap ☆ on any object." :
+        TRK.list === "horizon" ? "Nothing above the horizon." : "No objects match.") + "</div>";
+    document.getElementById("trk-dso").querySelectorAll(".star").forEach(function (el) {
+      el.addEventListener("click", function (ev) { ev.stopPropagation(); toggleFav(el.getAttribute("data-fav")); });
+    });
     document.getElementById("trk-dso").querySelectorAll(".dso").forEach(function (el) {
       el.addEventListener("click", function () {
         var n = el.getAttribute("data-n");
@@ -4828,6 +4873,9 @@
   });
   document.getElementById("trk-q").addEventListener("input", function () {
     TRK.q = this.value; trkDirty = true;
+  });
+  document.getElementById("trk-list").addEventListener("change", function () {
+    TRK.list = this.value; trkDirty = true;
   });
   document.getElementById("nightbtn").addEventListener("click", function () {
     SET.night = !SET.night; saveSettings(); applyNight();
@@ -5441,6 +5489,8 @@
     EVENTS: function (y, m) { return skyEventsMonth(y || new Date().getUTCFullYear(), m == null ? new Date().getUTCMonth() : m); },
     JUPMOONS: function (jd) { return jupiterMoons(jd || sysJD()); },
     SATURN: function (jd) { var s = saturnTilt(jd || sysJD()); return { B: s.B }; },
+    FAVS: function () { return Object.keys(FAV); },
+    TOGGLEFAV: function (n) { toggleFav(n); return Object.keys(FAV); },
     SWLIVE: function () { return SWLIVE; },
     REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
