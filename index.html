@@ -549,6 +549,8 @@
       <input id="set-music" type="checkbox"></div>
     <div class="set-row"><span>Music volume</span>
       <input id="set-musicvol" type="range" min="0" max="80" step="5"></div>
+    <div class="set-row"><span>Deep star catalogue (108,000 stars)</span>
+      <input id="set-deepstars" type="checkbox"></div>
     <div class="set-row"><span>Restore defaults</span>
       <button id="set-reset">Reset settings</button></div>
     <button id="settingsclose" aria-label="Close settings">Close</button>
@@ -1163,7 +1165,7 @@
   var SET = { zoomSpeed: 1, spinOnOpen: true, reduceMotion: false,
     maxLabels: 150, detail: true, hq: true, wake: false, fps: false,
     swLive: false, swAsked: false, welcome: false, night: false, arFov: 62, arHead: 0,
-    music: false, musicVol: 0.35 };
+    music: false, musicVol: 0.35, deepStars: false };
   (function () {
     try {
       var raw = localStorage.getItem("pe.settings");
@@ -1181,6 +1183,18 @@
   }
   // ---- ambient soundtrack (generated loop, bundled offline) ----
   var MUSIC = { el: null, fade: 0, want: false };
+  // ---- deep star tier (108k stars, loaded on demand) ----
+  var DEEP = { loading: false, ready: false };
+  function loadDeepStars(cb) {
+    if (window.STARS_DEEP) { DEEP.ready = true; if (cb) cb(); return; }
+    if (DEEP.loading) return;
+    DEEP.loading = true;
+    var s = document.createElement("script");
+    s.src = "stars_deep.js";
+    s.onload = function () { DEEP.loading = false; DEEP.ready = true; if (cb) cb(); };
+    s.onerror = function () { DEEP.loading = false; DEEP.ready = false; };
+    document.head.appendChild(s);
+  }
   function applyMusic() {
     var b = document.getElementById("musicbtn");
     if (b) b.classList.toggle("on", !!SET.music);
@@ -1242,6 +1256,7 @@
     applyWake();
     applyNight();
     applyMusic();
+    if (SET.deepStars) loadDeepStars(function () { trkDirty = true; trkKey = ""; });
     document.getElementById("fps").style.display = SET.fps ? "block" : "none";
     if (motionOff() && spinWanted) setSpin(false);
     var z = document.getElementById("set-zoom");
@@ -1262,6 +1277,8 @@
         mu.checked = SET.music;
         document.getElementById("set-musicvol").value = Math.round((SET.musicVol || 0.35) * 100);
       }
+      var ds = document.getElementById("set-deepstars");
+      if (ds) ds.checked = SET.deepStars;
     }
   }
   if (REDUCE_MOTION) setSpin(false); else syncSpinBtn();
@@ -2421,11 +2438,13 @@
     bind("set-swlive", "swLive");
     bind("set-music", "music");
     bind("set-musicvol", "musicVol", function (e) { return (+e.value) / 100; });
+    bind("set-deepstars", "deepStars");
+    bind("set-deepstars", "deepStars");
     document.getElementById("set-reset").addEventListener("click", function () {
       SET.zoomSpeed = 1; SET.spinOnOpen = true; SET.reduceMotion = false;
       SET.maxLabels = 150; SET.detail = true; SET.hq = true;
       SET.wake = false; SET.fps = false; SET.swLive = false;
-      SET.music = false; SET.musicVol = 0.35;
+      SET.music = false; SET.musicVol = 0.35; SET.deepStars = false;
       saveSettings(); applySettings();
     });
     document.getElementById("set-musicvol").addEventListener("input", function () {
@@ -5101,9 +5120,10 @@
       });
     }
     // stars — precession is negligible over a day, so cache the precessed
-    // position per star and only recompute every ~30 days (41k stars).
+    // position per star and only recompute every ~30 days (41k or 108k stars).
     var visible = [];
-    if (window.STARS) STARS.forEach(function (st) {
+    var starList = (window.STARS_DEEP && SET.deepStars) ? STARS_DEEP : (window.STARS || []);
+    starList.forEach(function (st) {
       if (!st._p || Math.abs(st._pjd - jd) > 30) {
         var rd0 = precessRD(st.ra, st.dec, jd);
         st._ra = rd0.ra; st._dec = rd0.dec; st._pjd = jd; st._p = 1;
@@ -5520,7 +5540,8 @@
     });
     // stars (named / brighter), planets, deep sky
     g.font = "11px ui-monospace,monospace";
-    (window.STARS || []).forEach(function (st) {
+    var starSrc = (window.STARS_DEEP && SET.deepStars) ? STARS_DEEP : (window.STARS || []);
+    starSrc.forEach(function (st) {
       if (!(st.m < 3.6 && st.n)) return;
       var rd = precessRD(st.ra, st.dec, jd), hz = altAz(rd.ra, rd.dec, lst, lat);
       if (hz.alt < 0) return;
@@ -6469,7 +6490,7 @@
     SUNLON: function (jd) { return geoLon("sun", jd); },
     SW: function () { return SW; },
     DSO: function () { return { count: (window.DEEPSKY || []).length }; },
-    STARS: function () { return { count: (window.STARS || []).length }; },
+    STARS: function () { return { count: (window.STARS || []).length, deep: !!(window.STARS_DEEP), usingDeep: !!SET.deepStars }; },
     CONST: function () { return { count: (window.CONSTELLATIONS || []).map(function (c) { return c.a; }) }; },
     RTS: function (name) {
       var o = null; (window.DEEPSKY || []).forEach(function (x) { if (x.n === name) o = x; });
