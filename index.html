@@ -341,12 +341,17 @@
   #tel-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#3f5670;margin-left:6px}
   #tel-dot.on{background:#4fd18b}
   #tel-dot.err{background:#ff6b6b}
-  #trk-objctl{display:flex;gap:6px;margin:0 0 6px}
+  #trk-objctl{display:flex;gap:6px;margin:0 0 6px;flex-wrap:wrap}
   #trk-objctl select{flex:1 1 auto;font-size:10.5px;padding:3px 4px;background:#0d1626;color:#c9d6ea;border:1px solid #22334a;border-radius:6px}
   #trk-objctl input{flex:1 1 auto;font-size:10.5px;padding:3px 6px;width:auto}
+  #trk-named{max-width:120px}
+  #trk-objctl button{font-size:10.5px;padding:3px 7px}
   #trk-dso .star{color:#3f5670;cursor:pointer;padding:0 3px;flex:0 0 auto}
   #trk-dso .star.on{color:#ffd257}
   #trk-dso .star:hover{color:#8fc3ff}
+  #trk-dso .mv,#trk-dso .rm{color:#3f5670;cursor:pointer;padding:0 3px;flex:0 0 auto}
+  #trk-dso .mv:hover{color:#8fc3ff}
+  #trk-dso .rm:hover{color:#ff8f6b}
   #trk-dso .dso{display:flex;justify-content:space-between;gap:6px;padding:2px 3px;
     border-bottom:1px solid #101827;cursor:pointer;border-radius:5px}
   #trk-dso .dso:hover{background:rgba(120,150,220,.14)}
@@ -617,13 +622,16 @@
     <div id="trk-objctl">
       <select id="trk-list">
         <option value="horizon">Above horizon</option>
-        <option value="favourites">★ Favourites</option>
+        <option value="named">My lists</option>
         <option value="messier">Messier</option>
         <option value="caldwell">Caldwell</option>
         <option value="binocular">Binocular best</option>
       </select>
+      <select id="trk-named"></select>
       <input id="trk-q" placeholder="filter…" autocomplete="off">
       <button id="trk-export" title="Export this list as text">⤓</button>
+      <button id="trk-newlist" title="New observing list">＋</button>
+      <button id="trk-import" title="Import a list">⇪</button>
     </div>
     <div id="trk-dso"></div>
     <h3>NEAREST STARS</h3><div id="trk-stars"></div>
@@ -4411,13 +4419,20 @@
   }
   function listText() {
     var jd = sysJD(), lat = CHART.lat, lon = CHART.lon, lst = lstDeg(jd, lon);
-    var src = (window.DEEPSKY || []).filter(function (o) {
-      if (TRK.list === "favourites") return FAV[o.n];
-      if (TRK.list === "messier") return o.mn;
-      if (TRK.list === "caldwell") return o.cl;
-      return true;
-    }).filter(function (o) { return dsoMatches(o, TRK.q.trim()); });
-    if (TRK.list === "horizon") {
+    var byName = {};
+    (window.DEEPSKY || []).forEach(function (o) { byName[o.n] = o; });
+    var src;
+    if (TRK.list === "named") {
+      src = curList().items.map(function (n) { return byName[n]; }).filter(Boolean);
+    } else {
+      src = (window.DEEPSKY || []).filter(function (o) {
+        if (TRK.list === "messier") return o.mn;
+        if (TRK.list === "caldwell") return o.cl;
+        return true;
+      });
+    }
+    src = src.filter(function (o) { return dsoMatches(o, TRK.q.trim()); });
+    if (TRK.list === "horizon" || TRK.list === "named") {
       src = src.filter(function (o) { return altAz(o.ra, o.dec, lst, lat).alt > 0; });
     }
     var lines = src.slice(0, 150).map(function (o) {
@@ -4581,7 +4596,7 @@
     return { alt: alt / D2R, az: norm360(az / D2R) };
   }
   // ---- deep-sky helpers (tracker) ----
-  var trkDirty = true, TRK = { sel: null, q: "", list: "horizon" };
+  var trkDirty = true, TRK = { sel: null, q: "", list: "horizon", named: "" };
   // ---- observing lists / favourites (persisted on device) ----
   function loadFavs() {
     try {
@@ -4592,7 +4607,106 @@
   }
   function saveFavs() { try { localStorage.setItem("pe.favs", JSON.stringify(Object.keys(FAV))); } catch (e) {} }
   var FAV = loadFavs();
-  function toggleFav(n) { if (FAV[n]) delete FAV[n]; else FAV[n] = 1; saveFavs(); trkDirty = true; }
+  function toggleFav(n) {
+    if (FAV[n]) delete FAV[n];
+    else { FAV[n] = 1; LIST.named.forEach(function (l) { if (l.items.indexOf(n) < 0) l.items.push(n); }); }
+    saveFavs(); saveLists(); trkDirty = true;
+  }
+  // Named observing lists. The legacy pe.favs set maps to a "Favourites" list.
+  function defaultLists() {
+    var names = Object.keys(FAV).sort();
+    return [{ name: "Favourites", items: names }, { name: "Best of the sky", items: [] }];
+  }
+  function loadLists() {
+    try {
+      var a = JSON.parse(localStorage.getItem("pe.lists") || "null"), o = {};
+      if (Object.prototype.toString.call(a) === "[object Array]" && a.length &&
+          typeof a[0].name === "string" && Object.prototype.toString.call(a[0].items) === "[object Array]") {
+        a.forEach(function (l) { o[l.name] = l; });
+        return o;
+      }
+    } catch (e) {}
+    return null;
+  }
+  function saveLists() {
+    try { localStorage.setItem("pe.lists", JSON.stringify(LIST.named)); } catch (e) {}
+  }
+  var CUR = null;
+  var LIST = { named: [] };
+  (function () {
+    var loaded = loadLists();
+    if (loaded) {
+      Object.keys(loaded).forEach(function (n) { LIST.named.push({ name: n, items: loaded[n].items.slice() }); });
+      // keep an entry for anything favourited but missing from the lists
+      Object.keys(FAV).forEach(function (n) {
+        var found = false;
+        LIST.named.forEach(function (l) { if (l.items.indexOf(n) >= 0) found = true; });
+        if (!found) {
+          if (!LIST.named.length) LIST.named.push({ name: "Favourites", items: [] });
+          LIST.named[0].items.push(n);
+        }
+      });
+    } else LIST.named = defaultLists();
+  })();
+  function curList() {
+    if (!LIST.named.length) LIST.named.push({ name: "Favourites", items: [] });
+    var l = null;
+    LIST.named.forEach(function (x) { if (x.name === TRK.named) l = x; });
+    if (!l) { l = LIST.named[0]; TRK.named = l.name; }
+    return l;
+  }
+  function moveItem(list, n, dir) {
+    var i = list.items.indexOf(n);
+    if (i < 0) return;
+    var j = i + dir;
+    if (j < 0 || j >= list.items.length) return;
+    list.items[i] = list.items[j]; list.items[j] = n;
+    saveLists(); trkDirty = true;
+  }
+  function removeItem(list, n) {
+    var i = list.items.indexOf(n);
+    if (i < 0) return;
+    list.items.splice(i, 1);
+    if (FAV[n]) { delete FAV[n]; saveFavs(); }
+    saveLists(); trkDirty = true;
+  }
+  function newList() {
+    var name = (prompt("Name for the new observing list:", "List " + (LIST.named.length + 1)) || "").trim();
+    if (!name) return;
+    if (LIST.named.some(function (l) { return l.name === name; })) { toast("That name already exists"); return; }
+    LIST.named.push({ name: name, items: [] });
+    TRK.named = name; TRK.list = "named";
+    saveLists(); trkDirty = true;
+  }
+  function allListsText() {
+    var out = "PLANETARY EXPLORER — observing lists\n" +
+      new Date().toISOString().slice(0, 16).replace("T", " ") + " UT\n";
+    LIST.named.forEach(function (l) {
+      out += "\n[" + l.name + "]\n" + l.items.join("\n") + "\n";
+    });
+    return out;
+  }
+  function importLists(text) {
+    var lines = String(text || "").split(/\r?\n/), cur = null, n = 0;
+    lines.forEach(function (ln) {
+      var m = ln.trim().match(/^\[(.+)\]$/);
+      if (m) {
+        cur = LIST.named.filter(function (l) { return l.name === m[1]; })[0];
+        if (!cur) { cur = { name: m[1], items: [] }; LIST.named.push(cur); }
+        return;
+      }
+      var s = ln.trim();
+      if (cur && s) { if (cur.items.indexOf(s) < 0) cur.items.push(s); n++; }
+    });
+    saveLists(); trkDirty = true;
+    return n;
+  }
+  function importFromText() {
+    var t = prompt("Paste a list to import (format: [List name] then one object per line):");
+    if (!t) return;
+    var n = importLists(t);
+    toast(n ? "Imported " + n + " object(s)" : "Nothing recognised");
+  }
   // ---- ASCOM Alpaca telescope control (HTTP/JSON over the local network) ----
   var TEL = { host: "", dev: 0, connected: false, name: "", busy: false, err: "",
     ra: null, dec: null, alt: null, az: null, slewing: false, tracking: null, timer: null };
@@ -4977,27 +5091,50 @@
     // object list for the chosen preset, filtered and sorted by altitude
     var q = TRK.q.trim();
     var proj = function (o) { var hz = altAz(o.ra, o.dec, lst, lat); return { o: o, alt: hz.alt, az: hz.az }; };
-    var src;
-    if (TRK.list === "favourites") src = (window.DEEPSKY || []).filter(function (o) { return FAV[o.n]; }).map(proj);
+    var byName = {};
+    (window.DEEPSKY || []).forEach(function (o) { byName[o.n] = o; });
+    var src, cl = curList();
+    if (TRK.list === "named") {
+      var ordered = [];
+      cl.items.forEach(function (n) { if (byName[n]) ordered.push(proj(byName[n])); });
+      src = ordered;
+    }
     else if (TRK.list === "messier") src = (window.DEEPSKY || []).filter(function (o) { return o.mn; }).map(proj);
     else if (TRK.list === "caldwell") src = (window.DEEPSKY || []).filter(function (o) { return o.cl; }).map(proj);
     else if (TRK.list === "binocular") src = (window.DEEPSKY || []).filter(function (o) {
       return o.m != null && o.m <= 8 && (o.t.indexOf("cluster") >= 0 || o.t.indexOf("nebula") >= 0 || o.t === "galaxy");
     }).map(proj);
     else src = dsoUp;
+    var isNamed = (TRK.list === "named");
     var list = src.filter(function (e) { return dsoMatches(e.o, q); });
-    list.sort(function (a, b) { return (b.alt - a.alt); });
+    if (!isNamed) list.sort(function (a, b) { return (b.alt - a.alt); });
     document.getElementById("trk-dso").innerHTML = list.slice(0, 150).map(function (e) {
       var o = e.o, up = e.alt > 0;
+      var ctl;
+      if (isNamed) {
+        var idx = cl.items.indexOf(o.n);
+        ctl = "<span class='mv' data-n='" + o.n + "' data-d='-1' title='Move up'>↑</span>" +
+          "<span class='mv' data-n='" + o.n + "' data-d='1' title='Move down'>↓</span>" +
+          "<span class='rm' data-n='" + o.n + "' title='Remove from list'>✕</span>";
+      } else {
+        ctl = "<span class='star" + (FAV[o.n] ? " on" : "") + "' data-fav='" + o.n + "'>" + (FAV[o.n] ? "★" : "☆") + "</span>";
+      }
       return "<div class='dso" + (TRK.sel === o.n ? " sel" : "") + "' data-n='" + o.n + "'>" +
-        "<span class='star" + (FAV[o.n] ? " on" : "") + "' data-fav='" + o.n + "'>" + (FAV[o.n] ? "★" : "☆") + "</span>" +
+        (isNamed ? "" : ctl) +
         "<span style='flex:1 1 auto'><b>" + o.n + "</b> <span class='ty'>" + o.t + "</span></span>" +
-        "<span>" + (up ? e.alt.toFixed(0) + "° " + compass(e.az) : "↓" + e.alt.toFixed(0) + "°") + "</span></div>";
+        "<span>" + (up ? e.alt.toFixed(0) + "° " + compass(e.az) : "↓" + e.alt.toFixed(0) + "°") + "</span>" +
+        (isNamed ? ctl : "") + "</div>";
     }).join("") || "<div class='fnote' style='padding:4px 0'>" +
-      (TRK.list === "favourites" && !Object.keys(FAV).length ? "No favourites yet — tap ☆ on any object." :
+      (isNamed && !cl.items.length ? "This list is empty — tap ☆ on any object to add it." :
         TRK.list === "horizon" ? "Nothing above the horizon." : "No objects match.") + "</div>";
     document.getElementById("trk-dso").querySelectorAll(".star").forEach(function (el) {
       el.addEventListener("click", function (ev) { ev.stopPropagation(); toggleFav(el.getAttribute("data-fav")); });
+    });
+    document.getElementById("trk-dso").querySelectorAll(".mv").forEach(function (el) {
+      el.addEventListener("click", function (ev) { ev.stopPropagation(); moveItem(cl, el.getAttribute("data-n"), +el.getAttribute("data-d")); });
+    });
+    document.getElementById("trk-dso").querySelectorAll(".rm").forEach(function (el) {
+      el.addEventListener("click", function (ev) { ev.stopPropagation(); removeItem(cl, el.getAttribute("data-n")); });
     });
     document.getElementById("trk-dso").querySelectorAll(".dso").forEach(function (el) {
       el.addEventListener("click", function () {
@@ -5006,6 +5143,15 @@
         trkDirty = true;
       });
     });
+    // named-list selector
+    var ns = document.getElementById("trk-named");
+    if (ns) {
+      var opts = LIST.named.map(function (l) {
+        return "<option value=\"" + l.name + "\"" + (l.name === cl.name ? " selected" : "") + ">" + l.name + "</option>";
+      }).join("");
+      if (ns.innerHTML !== opts) ns.innerHTML = opts;
+      ns.style.display = isNamed ? "" : "none";
+    }
     // tonight planner for the selected object
     var sel = null;
     if (TRK.sel && window.DEEPSKY) DEEPSKY.forEach(function (o) { if (o.n === TRK.sel) sel = o; });
@@ -5530,6 +5676,11 @@
   document.getElementById("trk-list").addEventListener("change", function () {
     TRK.list = this.value; trkDirty = true;
   });
+  document.getElementById("trk-named").addEventListener("change", function () {
+    TRK.named = this.value; trkDirty = true;
+  });
+  document.getElementById("trk-newlist").addEventListener("click", newList);
+  document.getElementById("trk-import").addEventListener("click", importFromText);
   document.getElementById("tel-connect").addEventListener("click", telConnect);
   document.getElementById("tel-host").addEventListener("keydown", function (e) {
     if (e.key === "Enter") telConnect();
@@ -6210,6 +6361,14 @@
     SATURN: function (jd) { var s = saturnTilt(jd || sysJD()); return { B: s.B }; },
     FAVS: function () { return Object.keys(FAV); },
     TOGGLEFAV: function (n) { toggleFav(n); return Object.keys(FAV); },
+    LISTS: function () { return LIST.named.map(function (l) { return { name: l.name, items: l.items.slice() }; }); },
+    NEWLIST: function (n) {
+      var name = String(n || "").trim();
+      if (!name || LIST.named.some(function (l) { return l.name === name; })) return false;
+      LIST.named.push({ name: name, items: [] }); saveLists(); return true;
+    },
+    IMPORTLISTS: function (t) { return importLists(t); },
+    LISTTEXT: function () { return allListsText(); },
     TELSTATE: function () { return { host: TEL.host, connected: TEL.connected, name: TEL.name,
       ra: TEL.ra, dec: TEL.dec, alt: TEL.alt, az: TEL.az, slewing: TEL.slewing, err: TEL.err }; },
     TELGOTO: function (sync) { telGoto(sync); },
