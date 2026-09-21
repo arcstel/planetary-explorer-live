@@ -520,6 +520,9 @@
     <h3>COMPASS</h3><div id="trk-loc"></div>
     <h3>ABOVE THE HORIZON</h3><div id="trk-up"></div>
     <h3 id="trk-planh" style="display:none">TONIGHT · <span id="trk-planname"></span></h3><div id="trk-plan" style="display:none"></div>
+    <h3>JUPITER'S MOONS</h3><canvas id="trk-jup" width="290" height="80"></canvas>
+    <h3>SATURN'S RINGS</h3><canvas id="trk-sat" width="290" height="96"></canvas>
+    <div id="trk-planetinfo"></div>
     <h3>DEEP SKY <input id="trk-q" placeholder="filter…" autocomplete="off" style="width:110px;font-size:10px;padding:2px 5px;float:right"></h3><div id="trk-dso"></div>
     <h3>NEAREST STARS</h3><div id="trk-stars"></div>
   </div>
@@ -593,8 +596,11 @@
         plus 1,900 deep-sky objects (OpenNGC, CC BY-SA): every Messier and
         Caldwell and bright NGC/IC clusters, nebulae and galaxies. Filter the
         list and pick one for a <b>Tonight</b> plan: rise, transit, set, maximum
-        altitude and a 24-hour altitude curve. <b>Night mode</b> (🔴) dims the
-        whole interface to red.</p>
+        altitude and a 24-hour altitude curve. The same panel shows
+        <b>Jupiter's moons</b> (Io, Europa, Ganymede, Callisto positioned from
+        their real orbital periods) and <b>Saturn's rings</b> with their true
+        opening angle and Titan. <b>Night mode</b> (🔴) dims the whole interface
+        to red.</p>
     <p><b>Zodiac systems:</b> the chart can be drawn in the <em>tropical</em>
         zodiac (equinox of date), in the <em>sidereal</em> zodiac with a choice
         of ayanamsa — Lahiri, Fagan–Bradley, Krishnamurti, B. V. Raman or
@@ -4248,6 +4254,61 @@
     for (var i = 0; i < o.a.length; i++) if (o.a[i].toLowerCase().indexOf(q) >= 0) return true;
     return o.t.toLowerCase().indexOf(q) >= 0;
   }
+  // ---- Galilean moons and Saturn's rings ----
+  // IAU J2000 north poles (public-domain constants).
+  var JUP_POLE = { ra: 268.056595, dec: 64.495303 };
+  var SAT_POLE = { ra: 40.589, dec: 83.537 };
+  var GAL_R = { io: 5.905, europa: 9.399, ganymede: 14.99, callisto: 26.29 };
+  var GAL_KM = { io: 1821.6, europa: 1560.8, ganymede: 2634.1, callisto: 2410.3 };
+  function unitVec(raDeg, decDeg) {
+    var a = raDeg * D2R, d = decDeg * D2R, cd = Math.cos(d);
+    return new THREE.Vector3(cd * Math.cos(a), cd * Math.sin(a), Math.sin(d));
+  }
+  function eclToEq(v, jd) {
+    var e = obliquity(jd) * D2R, ce = Math.cos(e), se = Math.sin(e);
+    return new THREE.Vector3(v.x, v.y * ce - v.z * se, v.y * se + v.z * ce);
+  }
+  // Earth->planet unit vector in J2000 equatorial coordinates.
+  function geoEqVec(id, jd) {
+    var A = new THREE.Vector3(), B = new THREE.Vector3();
+    planetHelio("earth", jd, A); planetHelio(id, jd, B);
+    return eclToEq(B.sub(A), jd).normalize();
+  }
+  // Skew basis: n1 = ascending node line, n2 = in-orbit plane, up = sky-plane
+  // projection of the pole. Returns {n1,n2,up,right,u} for one planet.
+  function orbitFrame(id, jd, pole) {
+    var u = geoEqVec(id, jd), P = unitVec(pole.ra, pole.dec);
+    var n1 = new THREE.Vector3().crossVectors(P, u).normalize();
+    var n2 = new THREE.Vector3().crossVectors(P, n1).normalize();
+    var up = P.clone().sub(u.clone().multiplyScalar(P.dot(u))).normalize();
+    var right = new THREE.Vector3().crossVectors(up, u).normalize();
+    return { n1: n1, n2: n2, up: up, right: right, u: u };
+  }
+  function jupiterMoons(jd) {
+    var f = orbitFrame("jupiter", jd, JUP_POLE), out = [];
+    CIRC_MOONS.forEach(function (cm) {
+      if (cm.host !== "jupiter") return;
+      var R = GAL_R[cm.id], th = (cm.phase + 360 * (jd - 2451544.5) / cm.period) * D2R;
+      var pos = f.n1.clone().multiplyScalar(R * Math.cos(th)).add(f.n2.clone().multiplyScalar(R * Math.sin(th)));
+      out.push({ id: cm.id, label: cm.label, R: R, km: GAL_KM[cm.id],
+        x: pos.dot(f.right), y: pos.dot(f.up), z: pos.dot(f.u) });
+    });
+    return out;
+  }
+  function saturnTilt(jd) {
+    var f = orbitFrame("saturn", jd, SAT_POLE);
+    return { B: Math.asin(Math.max(-1, Math.min(1, f.u.dot(unitVec(SAT_POLE.ra, SAT_POLE.dec))))) / D2R,
+      frame: f };
+  }
+  function saturnTitan(jd) {
+    var f = orbitFrame("saturn", jd, SAT_POLE), R = 20.3;
+    CIRC_MOONS.forEach(function (cm) {
+      if (cm.id !== "titan") return;
+      var th = (cm.phase + 360 * (jd - 2451544.5) / cm.period) * D2R;
+      f.moonX = R * Math.cos(th); f.moonY = R * Math.sin(th); f.R = R;
+    });
+    return f;
+  }
   // Render the fixed part of the sky (grid, constellations, stars, deep sky,
   // bodies) once, into an offscreen canvas, so the 5,000-star chart can blit at
   // 60 fps. Redrawn only when the date, place or size changes.
@@ -4466,6 +4527,7 @@
     document.getElementById("trk-stars").innerHTML = visible.slice(0, 26).map(function (o) {
       return "<div class='r'><span>" + o.n + "</span><b>" + o.alt.toFixed(0) + "° " + compass(o.az) + "</b></div>";
     }).join("");
+    drawJupiterSaturn(jd);
   }
   function drawDSOCurve(o, jd0, lat, lon) {
     var cv = document.getElementById("trk-curvecv");
@@ -4498,6 +4560,59 @@
     });
     g.fillStyle = "#61748e"; g.textAlign = "right";
     g.fillText("next 24 h →", W - 3, H - 3);
+  }
+  function drawJupiterSaturn(jd) {
+    var cv = document.getElementById("trk-jup");
+    if (cv) {
+      var g = cv.getContext("2d"), W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
+      g.clearRect(0, 0, W, H); g.fillStyle = "#0a1120"; g.fillRect(0, 0, W, H);
+      var moons = jupiterMoons(jd), scale = (W / 2 - 22) / 26.29, jr = 8;
+      g.strokeStyle = "rgba(90,120,170,.25)"; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(6, cy); g.lineTo(W - 6, cy); g.stroke();
+      var grd = g.createRadialGradient(cx - jr * 0.3, cy - jr * 0.3, jr * 0.2, cx, cy, jr);
+      grd.addColorStop(0, "#f2e2b8"); grd.addColorStop(1, "#b98a52");
+      g.fillStyle = grd; g.beginPath(); g.arc(cx, cy, jr, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#61748e"; g.font = "8px ui-monospace,monospace";
+      g.textAlign = "left"; g.fillText("E", 3, cy - 4);
+      g.textAlign = "right"; g.fillText("W", W - 3, cy - 4);
+      moons.forEach(function (m) {
+        var px = cx + m.x * scale, py = cy - m.y * scale;
+        var size = 2 + (m.km / 2634.1) * 2.4;
+        g.globalAlpha = m.z >= 0 ? 1 : 0.5;
+        g.fillStyle = "#dfe6ff";
+        g.beginPath(); g.arc(px, py, size, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1;
+        g.fillStyle = "#93a7c6"; g.font = "8.5px ui-monospace,monospace"; g.textAlign = "center";
+        g.fillText(m.label, px, H - 3);
+      });
+    }
+    var cv2 = document.getElementById("trk-sat");
+    if (cv2) {
+      var g2 = cv2.getContext("2d"), W2 = cv2.width, H2 = cv2.height, cx2 = W2 / 2, cy2 = H2 / 2 + 2;
+      g2.clearRect(0, 0, W2, H2); g2.fillStyle = "#0a1120"; g2.fillRect(0, 0, W2, H2);
+      var st = saturnTilt(jd), f = saturnTitan(jd);
+      var s = (W2 / 2 - 16) / 21, B = st.B * D2R, ang = Math.atan2(-f.n1.dot(f.up), f.n1.dot(f.right));
+      g2.save(); g2.translate(cx2, cy2); g2.rotate(ang);
+      g2.beginPath();
+      g2.ellipse(0, 0, 2.3 * s, 2.3 * s * Math.abs(Math.sin(B)), 0, 0, Math.PI * 2);
+      g2.ellipse(0, 0, 1.4 * s, 1.4 * s * Math.abs(Math.sin(B)), 0, 0, Math.PI * 2);
+      g2.fillStyle = "rgba(210,196,150,.55)"; g2.fill("evenodd");
+      g2.strokeStyle = "rgba(240,230,200,.5)"; g2.lineWidth = 1; g2.stroke();
+      g2.restore();
+      var sg2 = g2.createRadialGradient(cx2 - s * 0.3, cy2 - s * 0.3, s * 0.2, cx2, cy2, s);
+      sg2.addColorStop(0, "#f0e2b6"); sg2.addColorStop(1, "#c8a86a");
+      g2.fillStyle = sg2; g2.beginPath(); g2.arc(cx2, cy2, s, 0, Math.PI * 2); g2.fill();
+      var tx = cx2 + (f.n1.dot(f.right) * f.moonX + f.n2.dot(f.right) * f.moonY) * s;
+      var ty = cy2 - (f.n1.dot(f.up) * f.moonX + f.n2.dot(f.up) * f.moonY) * s;
+      g2.fillStyle = "#c9b28a"; g2.beginPath(); g2.arc(tx, ty, 1.8, 0, Math.PI * 2); g2.fill();
+      g2.fillStyle = "#93a7c6"; g2.font = "8.5px ui-monospace,monospace"; g2.textAlign = "center";
+      g2.fillText("Titan", tx, ty - 4);
+      g2.fillStyle = "#61748e"; g2.textAlign = "left"; g2.font = "9px ui-monospace,monospace";
+      g2.fillText("ring opening " + (st.B >= 0 ? "+" : "") + st.B.toFixed(1) + "°", 6, H2 - 5);
+    }
+    var info = document.getElementById("trk-planetinfo");
+    if (info) info.innerHTML = "<div class='fnote'>Positions computed from our own " +
+      "orbital model (Galilean periods accurate; configuration approximate).</div>";
   }
   function enterTracker() {
     if (SYS.view === "tracker") return;
@@ -5324,6 +5439,8 @@
       return { lon: norm360(Math.atan2(v.y, v.x) / D2R), lat: Math.asin(v.z / r) / D2R, rAU: r };
     },
     EVENTS: function (y, m) { return skyEventsMonth(y || new Date().getUTCFullYear(), m == null ? new Date().getUTCMonth() : m); },
+    JUPMOONS: function (jd) { return jupiterMoons(jd || sysJD()); },
+    SATURN: function (jd) { var s = saturnTilt(jd || sysJD()); return { B: s.B }; },
     SWLIVE: function () { return SWLIVE; },
     REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
