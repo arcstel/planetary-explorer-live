@@ -182,6 +182,26 @@
     border:1px solid #223046;border-radius:14px;padding:20px 22px;width:100%}
   #settingsbox h2{color:#35d0e0;font-size:15px;margin:0 0 4px}
   #settingsbox .hint{color:#61748e;font-size:11px;margin:0 0 10px}
+  #welcome{position:fixed;inset:0;z-index:63;display:none;place-items:center;
+    background:rgba(2,2,8,.82);padding:18px}
+  #welcome.open{display:grid}
+  #welcome .wc-panel{max-width:540px;width:100%;position:relative;
+    background:linear-gradient(180deg,#0b1322,#070c16);border:1px solid #223046;
+    border-radius:16px;padding:26px 26px 18px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  #welcome .wc-skip{position:absolute;right:12px;top:10px;background:none;border:0;
+    color:#61748e;font-size:11px;cursor:pointer;padding:4px 6px}
+  #welcome .wc-skip:hover{color:#93a7c6}
+  #welcome .wc-glyph{font-size:38px;line-height:1;margin-bottom:8px}
+  #welcome h2{color:#35d0e0;font-size:19px;margin:0 0 8px;letter-spacing:.4px}
+  #welcome p{color:#a8bad4;font-size:13px;line-height:1.75;margin:0 0 10px}
+  #welcome ul{color:#93a7c6;font-size:12.5px;line-height:1.75;margin:0 0 10px;padding-left:18px}
+  #welcome .wc-dots{display:flex;gap:6px;justify-content:center;margin:18px 0 12px}
+  #welcome .wc-dot{width:7px;height:7px;border-radius:50%;background:#22334a}
+  #welcome .wc-dot.on{background:#35d0e0}
+  #welcome .wc-btns{display:flex;gap:10px;flex-wrap:wrap}
+  #welcome .wc-btns button{flex:1 1 auto;padding:9px 14px}
+  #welcome .wc-btns button.primary{border-color:#35d0e0;color:#bff4fb}
+  #welcome .wc-btns button.ghost{flex:0 0 auto;border-color:#223046;color:#93a7c6}
   .set-row{display:flex;align-items:center;gap:14px;justify-content:space-between;
     padding:9px 0;border-bottom:1px solid #16202f;font-size:12px;color:#93a7c6}
   .set-row:last-of-type{border-bottom:0}
@@ -360,9 +380,19 @@
       <input id="set-wake" type="checkbox"></div>
     <div class="set-row"><span>Show frame rate</span>
       <input id="set-fps" type="checkbox"></div>
+    <div class="set-row"><span>Live space-weather updates (only when online)</span>
+      <input id="set-swlive" type="checkbox"></div>
     <div class="set-row"><span>Restore defaults</span>
       <button id="set-reset">Reset settings</button></div>
     <button id="settingsclose">Close</button>
+  </div>
+</div>
+<div id="welcome">
+  <div class="wc-panel">
+    <button class="wc-skip" id="wc-skip">Skip ✕</button>
+    <div id="wc-body"></div>
+    <div class="wc-dots" id="wc-dots"></div>
+    <div class="wc-btns" id="wc-btns"></div>
   </div>
 </div>
 <div id="skyui">
@@ -426,6 +456,7 @@
   <div id="flareleft">
     <h3>☀ SOLAR FLARE PROJECTION</h3>
     <div id="fl-summary"></div>
+    <div id="fl-livebar"></div>
     <h3>SELECTED REGION</h3>
     <div id="fl-region"></div>
     <h3>READING THE DISK</h3>
@@ -607,11 +638,21 @@
        planet colours are static and time-lapse is smooth orbital motion, not
        flicker. The idle auto-spin is disabled automatically when your device
        requests reduced motion.</p>
+    <h3>Space weather (☀ Flares)</h3>
+    <p>The Flares view ships a snapshot of <b>NOAA SWPC</b> public-domain
+       space-weather data — active regions, GOES X-ray flares, planetary Kp,
+       the real-time solar wind, and monthly sunspot/F10.7 indices. The
+       projection geometry is our own: region longitudes are rotated to the
+       date you choose and measured against the Sun–Earth line. Optionally you
+       can turn on <b>live updates</b> to fetch fresher data from NOAA when
+       online; the app sends nothing about you and works fully offline without
+       it.</p>
     <h3>Disclaimer</h3>
     <p>Not affiliated with, sponsored by, or endorsed by NASA, USGS, or any
        space agency. All trademarks are the property of their respective
        owners.</p>
     <p style="color:#61748e">Website: cherishvale.com</p>
+    <button id="wc-reopen" style="margin-right:8px">Show welcome tour</button>
     <button id="aboutclose">Close</button>
   </div>
 </div>
@@ -838,7 +879,8 @@
   }
   // ---- special settings (persisted) ----
   var SET = { zoomSpeed: 1, spinOnOpen: true, reduceMotion: false,
-    maxLabels: 150, detail: true, hq: true, wake: false, fps: false };
+    maxLabels: 150, detail: true, hq: true, wake: false, fps: false,
+    swLive: false, swAsked: false, welcome: false };
   (function () {
     try {
       var raw = localStorage.getItem("pe.settings");
@@ -874,6 +916,8 @@
       document.getElementById("set-hq").checked = SET.hq;
       document.getElementById("set-wake").checked = SET.wake;
       document.getElementById("set-fps").checked = SET.fps;
+      var sw = document.getElementById("set-swlive");
+      if (sw) sw.checked = SET.swLive;
     }
   }
   if (REDUCE_MOTION) setSpin(false); else syncSpinBtn();
@@ -1909,8 +1953,6 @@
     var k = rotScale();
     userRotY += dx * k;
     userRotX += dy * k;
-    if (userRotX > 1.4) userRotX = 1.4;
-    if (userRotX < -1.4) userRotX = -1.4;
     velY = dx * k; velX = dy * k;
     applyGlobeRotation();
   }
@@ -2031,14 +2073,96 @@
     bind("set-hq", "hq");
     bind("set-wake", "wake");
     bind("set-fps", "fps");
+    bind("set-swlive", "swLive");
     document.getElementById("set-reset").addEventListener("click", function () {
       SET.zoomSpeed = 1; SET.spinOnOpen = true; SET.reduceMotion = false;
       SET.maxLabels = 150; SET.detail = true; SET.hq = true;
-      SET.wake = false; SET.fps = false;
+      SET.wake = false; SET.fps = false; SET.swLive = false;
       saveSettings(); applySettings();
     });
   })();
   applySettings();
+  (function () {
+    var sw = document.getElementById("set-swlive");
+    if (!sw) return;
+    sw.addEventListener("change", function () {
+      flarePanelJD = null;
+      if (SET.swLive) swRefresh(true);
+      else if (SYS.view === "flare") drawFlares();
+    });
+  })();
+  (function welcomeTour() {
+    var box = document.getElementById("welcome");
+    if (!box) return;
+    var STEPS = [
+      { glyph: "🪐", title: "Welcome to Planetary Explorer",
+        html: "<p>An offline 3D atlas of the Solar System. <b>Drag</b> to spin any world, " +
+          "<b>pinch or scroll</b> to zoom, and <b>tap a label</b> to explore. Everything " +
+          "is bundled in the app — no internet needed.</p>" },
+      { glyph: "🌍", title: "Twenty worlds, up close",
+        html: "<p>NASA and USGS imagery for the Moon, Mars, Mercury, Venus, Earth, Pluto " +
+          "and more, with thousands of named craters, seas and mountains. Earth adds a " +
+          "244,625-place gazetteer and seven street-level maps.</p>" },
+      { glyph: "☉", title: "The whole system — and the sky",
+        html: "<p>Zoom out into the live orbit map, or reach for the <b>☉ System</b> bar:</p>" +
+          "<ul><li>✦ <b>Astrology</b> — birth charts, houses and aspects</li>" +
+          "<li>☾ <b>Moon</b> and 🧭 <b>Sky tracker</b></li>" +
+          "<li>🗓 <b>Almanac</b> and 📜 <b>Codex</b></li></ul>" },
+      { glyph: "☀", title: "Space weather",
+        html: "<p><b>☀ Flares</b> shows the Sun's active regions and how Earth-directed " +
+          "they are, from public-domain NOAA data. It works fully offline from a bundled " +
+          "snapshot.</p><p>Would you like it to refresh from NOAA when you have a " +
+          "connection? Only public data is downloaded — nothing about you is ever sent. " +
+          "You can change this any time in ⚙ Settings.</p>", weather: true },
+      { glyph: "✨", title: "You're all set",
+        html: "<p>Find <b>☀ Flares</b>, 🧭 <b>Sky tracker</b>, ✦ <b>Astrology</b>, " +
+          "☾ <b>Moon</b> and 🗓 <b>Almanac</b> in the <b>☉ System</b> bar. " +
+          "Reopen this tour any time from ⓘ <b>About</b>.</p>" }
+    ];
+    var idx = 0, live = false;
+    function finish() {
+      SET.welcome = true; SET.swAsked = true; SET.swLive = live;
+      saveSettings(); applySettings();
+      box.classList.remove("open");
+      if (live) swRefresh(true);
+    }
+    function render() {
+      var s = STEPS[idx];
+      document.getElementById("wc-body").innerHTML =
+        "<div class='wc-glyph'>" + s.glyph + "</div><h2>" + s.title + "</h2>" + s.html;
+      document.getElementById("wc-dots").innerHTML = STEPS.map(function (_, i) {
+        return "<span class='wc-dot" + (i === idx ? " on" : "") + "'></span>";
+      }).join("");
+      var btns = [];
+      if (idx > 0 && !s.weather) btns.push("<button class='ghost' data-act='back'>Back</button>");
+      if (s.weather) {
+        btns.push("<button data-act='back' class='ghost'>Back</button>");
+        btns.push("<button class='primary' data-act='live'>Enable live updates</button>");
+        btns.push("<button data-act='off'>Stay offline</button>");
+      } else if (idx === STEPS.length - 1) {
+        btns.push("<button class='primary' data-act='done'>Start exploring</button>");
+      } else {
+        btns.push("<button class='primary' data-act='next'>Next</button>");
+      }
+      var bb = document.getElementById("wc-btns");
+      bb.innerHTML = btns.join("");
+      bb.querySelectorAll("button").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var a = b.getAttribute("data-act");
+          if (a === "back") { idx = Math.max(0, idx - 1); render(); }
+          else if (a === "next") { idx++; render(); }
+          else if (a === "live") { live = true; finish(); }
+          else if (a === "off") { live = false; finish(); }
+          else finish();
+        });
+      });
+    }
+    function open() { idx = 0; live = SET.swLive; render(); box.classList.add("open"); }
+    document.getElementById("wc-skip").addEventListener("click", function () { live = false; finish(); });
+    var reopen = document.getElementById("wc-reopen");
+    if (reopen) reopen.addEventListener("click", open);
+    if (!SET.welcome) setTimeout(open, 1200);
+  })();
   document.getElementById("about").addEventListener("click", function () {
     document.getElementById("aboutbox").classList.add("open");
   });
@@ -2072,8 +2196,6 @@
     }
     if (!motionOff() && !dragging && (Math.abs(velX) > 0.00005 || Math.abs(velY) > 0.00005)) {
       userRotY += velY; userRotX += velX;
-      if (userRotX > 1.4) userRotX = 1.4;
-      if (userRotX < -1.4) userRotX = -1.4;
       applyGlobeRotation();
       velX *= 0.94; velY *= 0.94;
     }
@@ -4413,6 +4535,96 @@
   var SW = (typeof window !== "undefined") ? window.SPACE_WEATHER : null;
   var FLARE_CONE = 34;           // deg half-angle treated as Earth-directed
   var SYNODIC = 360 / 27.2753;   // deg/day, solar rotation seen from Earth
+  // Optional live refresh. Off by default; the app never touches the network
+  // unless the user opts in (⚙ Settings or the first-run prompt).
+  var SWLIVE = { busy: false, at: 0, err: null };
+  var SW_URLS = {
+    regions: "https://services.swpc.noaa.gov/json/solar_regions.json",
+    flares: "https://services.swpc.noaa.gov/json/goes/primary/xray-flares-7-day.json",
+    kp: "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json",
+    wind: "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json",
+    mag: "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json",
+    indices: "https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json"
+  };
+  function swNum(v, d) { var n = (typeof v === "number") ? v : parseFloat(v); return isFinite(n) ? n : d; }
+  function swParse(raw) {
+    var out = {}, regs = raw.regions || [];
+    var latest = ""; regs.forEach(function (r) { if ((r.observed_date || "") > latest) latest = r.observed_date || ""; });
+    out.regionDate = latest;
+    out.regions = regs.filter(function (r) { return (r.observed_date || "") === latest; }).map(function (r) {
+      return { no: r.region, lat: swNum(r.latitude, 0), lon: swNum(r.longitude, 0),
+        carrington: swNum(r.carrington_longitude, null), area: swNum(r.area, 0),
+        spots: swNum(r.number_spots, 0), extent: swNum(r.extent, 0),
+        spotClass: r.spot_class || "", magClass: r.mag_class || "",
+        c: swNum(r.c_flare_probability, 0), m: swNum(r.m_flare_probability, 0),
+        x: swNum(r.x_flare_probability, 0), proton: swNum(r.proton_probability, 0),
+        cXray: swNum(r.c_xray_events, 0), mXray: swNum(r.m_xray_events, 0),
+        xXray: swNum(r.x_xray_events, 0), first: r.first_date };
+    }).sort(function (a, b) { return b.area - a.area; });
+    out.flares = (raw.flares || []).slice(-60).map(function (f) {
+      return { begin: f.begin_time, max: f.max_time, end: f.end_time, "class": f.max_class || f.begin_class || "",
+        beginClass: f.begin_class || "", satellite: f.satellite };
+    });
+    out.kp = (raw.kp || []).slice(-32).map(function (k) { return { t: k.time_tag, kp: swNum(k.Kp, 0), a: swNum(k.a_running, 0) }; });
+    out.wind = (raw.wind || []).filter(function (r) { return swNum(r.proton_speed, null) != null; })
+      .slice(-180).map(function (r) { return { t: r.time_tag, speed: swNum(r.proton_speed, null),
+        density: swNum(r.proton_density, null), temp: swNum(r.proton_temperature, null) }; });
+    out.mag = (raw.mag || []).filter(function (r) { return swNum(r.bz_gsm, null) != null; })
+      .slice(-180).map(function (r) { return { t: r.time_tag, bt: swNum(r.bt, null), bz: swNum(r.bz_gsm, null) }; });
+    out.indices = (raw.indices || []).slice(-13).map(function (r) {
+      var ssn = swNum(r.observed_swpc_ssn, null); if (ssn == null || ssn < 0) ssn = swNum(r.ssn, null);
+      var f = swNum(r["f10.7"], null); if (f != null && f < 0) f = null;
+      return { t: r["time-tag"], ssn: ssn, f107: f };
+    });
+    return out;
+  }
+  function swGet(key) {
+    return fetch(SW_URLS[key], { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error(key + " " + r.status); return r.json();
+    }).then(function (d) { var o = {}; o[key] = d; return o; });
+  }
+  function swRefresh(force) {
+    if (!SET.swLive || SWLIVE.busy) return;
+    if (!force && SWLIVE.at && Date.now() - SWLIVE.at < 5 * 60 * 1000) return;
+    SWLIVE.busy = true; SWLIVE.err = null;
+    if (SYS.view === "flare") buildFlarePanels(flareRegions(), subEarthLat(sysJD()));
+    var keys = Object.keys(SW_URLS);
+    Promise.all(keys.map(function (k) { return swGet(k).catch(function (e) { SWLIVE.err = String(e); return null; }); }))
+      .then(function (parts) {
+        var raw = {};
+        parts.forEach(function (p) { if (p) for (var k in p) raw[k] = p[k]; });
+        if (!raw.regions) throw new Error("no regions response");
+        var live = swParse(raw);
+        // keep bundled arrays for any endpoint that failed
+        ["flares", "kp", "wind", "mag", "indices"].forEach(function (k) {
+          if (!raw[k] && SW && SW[k]) live[k] = SW[k];
+        });
+        live.source = "NOAA SWPC (public domain, live)";
+        live.sourceUrl = "https://services.swpc.noaa.gov/";
+        live.fetched = new Date().toISOString();
+        live.live = true;
+        SW = live; SWLIVE.at = Date.now();
+      })
+      .catch(function (e) { SWLIVE.err = String(e); })
+      .then(function () {
+        SWLIVE.busy = false;
+        flarePanelJD = null;
+        if (SYS.view === "flare") drawFlares();
+      });
+  }
+  function swLiveHTML() {
+    var snap = (SW && SW.regionDate) || "—";
+    var on = SET.swLive;
+    var line;
+    if (SWLIVE.busy) line = "Fetching live NOAA data…";
+    else if (SW && SW.live && SWLIVE.at)
+      line = "Live NOAA SWPC · updated " + new Date(SWLIVE.at).toISOString().slice(11, 16) + " UT";
+    else if (SWLIVE.err) line = "Offline — using bundled snapshot (" + snap + ")";
+    else line = "Bundled NOAA snapshot · " + snap;
+    var btn = on ? "<button id='fl-refresh' style='margin-left:8px;padding:2px 8px;font-size:10.5px'>↻ Refresh</button>" : "";
+    var note = on ? "" : "<div class='fnote' style='margin-top:4px'>Live updates are off. Turn them on in ⚙ Settings.</div>";
+    return "<div class='r'><span>Source</span><b>" + line + btn + "</b></div>" + note;
+  }
   var flareSel = null, flareHit = [], flarePanelJD = null;
   var flareCanvas = document.getElementById("flarecanvas");
   var flareCtx = flareCanvas.getContext("2d");
@@ -4671,6 +4883,10 @@
         (mag.bz != null ? mag.bz.toFixed(1) : "—") + " nT" : "—") +
       frow("Bz coupling", (mag && mag.bz != null) ? (mag.bz < -2 ? "<span class='dr'>southward</span>" : "northward") : "—");
 
+    document.getElementById("fl-livebar").innerHTML = swLiveHTML();
+    var rf = document.getElementById("fl-refresh");
+    if (rf) rf.addEventListener("click", function () { SWLIVE.at = 0; swRefresh(true); });
+
     document.getElementById("fl-help").innerHTML =
       "The disk is the Earth-facing Sun, solar north up and east to the left. Blue dashes " +
       "mark the central meridian; ⊕ is the sub-Earth point. The green dashed circle is the " +
@@ -4700,6 +4916,7 @@
     setSysInfo("Solar flares — NOAA active regions and Earth-impact projection");
     flarePanelJD = null;
     drawFlares();
+    if (SET.swLive) swRefresh(false);
   }
   function exitFlares() {
     if (SYS.view !== "flare") return;
@@ -4730,7 +4947,10 @@
     SEASON: function (y) { return seasonEvents(y || 2026); },
     SUNLON: function (jd) { return geoLon("sun", jd); },
     SW: function () { return SW; },
+    SWLIVE: function () { return SWLIVE; },
+    REFRESH: function () { swRefresh(true); },
     VIS: function () { return { planet: planetGroup.visible, sys: sysGroup ? sysGroup.visible : null }; },
+    ROT: function () { return { x: globe.rotation.x, y: globe.rotation.y }; },
     FLARES: function () { return { b0: subEarthLat(sysJD()), cone: FLARE_CONE,
       regions: flareRegions() }; },
     pickN: function () { return pick.length; } };
