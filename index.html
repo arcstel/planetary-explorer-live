@@ -980,7 +980,11 @@
       <li>Read positions, aspects, the aspect grid, then the <b>Balance</b>
           (element/modality), hemispheres, chart shape and essential dignities.</li>
       <li>Tick <b>Synastry</b> for a second person, <b>Transits</b> to compare the
-          chart with tonight's sky, or <b>Solar return</b> for this year's return.</li>
+          chart with tonight's sky, <b>Solar return</b> for this year's return, or
+          <b>Progressions</b> for the secondary progressed chart.</li>
+      <li>Below the wheel: element balance, hemispheres, chart shape, essential
+          dignities, <b>fixed-star contacts</b>, <b>midpoints</b> and the
+          <b>Arabic parts</b> (Fortune, Spirit and more).</li>
     </ol>
     <h3>☀ Space weather</h3>
     <p class="hp-note">The Sun's active regions are projected onto the Earth-facing
@@ -4064,6 +4068,54 @@
     out.sort(function (x, y) { return x.orb - y.orb; });
     return out;
   }
+  // ---- midpoints: planets equidistant from a midpoint axis ----
+  function midpoints(A, orb) {
+    orb = orb || 1.5;
+    var list = A.pos.filter(function (P) {
+      return PATTERN_BODIES.indexOf(P.b.id) >= 0 || P.b.id === "node" || P.b.id === "chiron";
+    });
+    var out = [], i, j;
+    for (i = 0; i < list.length; i++) for (j = i + 1; j < list.length; j++) {
+      var a = list[i].lon, b = list[j].lon;
+      var d = norm180(b - a), mid = norm360(a + d / 2);
+      // both the near and far midpoint axes
+      [mid, norm360(mid + 180)].forEach(function (M) {
+        list.forEach(function (P) {
+          if (P === list[i] || P === list[j]) return;
+          var off = Math.abs(norm180(P.lon - M));
+          if (off <= orb) out.push({ p1: list[i].b, p2: list[j].b, hit: P.b, mid: M, orb: off });
+        });
+      });
+    }
+    out.sort(function (x, y) { return x.orb - y.orb; });
+    // de-duplicate on the (pair, hit) triple, keeping the tightest
+    var seen = {}, uniq = [];
+    out.forEach(function (o) {
+      var k = [o.p1.id, o.p2.id, o.hit.id].sort().join("|");
+      if (!seen[k]) { seen[k] = 1; uniq.push(o); }
+    });
+    return uniq.slice(0, 8);
+  }
+  // ---- Arabic parts / lots (classical formulae, day vs night chart) ----
+  function arabicParts(A) {
+    var byId = {};
+    A.pos.forEach(function (P) { byId[P.b.id] = P.lon; });
+    var asc = A.hs.asc, sun = byId.sun, moon = byId.moon, venus = byId.venus, mars = byId.mars;
+    if (asc == null || sun == null || moon == null) return [];
+    // day chart = Sun above the horizon (houses 7-12)
+    var sunHouse = houseOf(A.hs.cusps, sun);
+    var day = sunHouse >= 7 && sunHouse <= 12;
+    var D = day ? 1 : -1;
+    var out = [
+      { name: "Lot of Fortune", lon: norm360(asc + D * (moon - sun)) },
+      { name: "Lot of Spirit", lon: norm360(asc - D * (moon - sun)) }
+    ];
+    if (venus != null) out.push({ name: "Lot of Eros", lon: norm360(asc + D * (venus - sun)) });
+    if (mars != null) out.push({ name: "Lot of Necessity", lon: norm360(asc - D * (mars - sun)) });
+    if (mars != null) out.push({ name: "Lot of Courage", lon: norm360(asc + D * (mars - moon)) });
+    if (venus != null) out.push({ name: "Lot of Marriage (A)", lon: norm360(asc - D * (venus - sun)) });
+    return out.map(function (p) { return { name: p.name, lon: p.lon, p: skyParts(p.lon), day: day }; });
+  }
   function gridTable(A, B) {
     var cols = B || A, html = "<table class='sgrid'><tr><th></th>";
     cols.forEach(function (P) { html += "<th>" + P.b.glyph + "</th>"; });
@@ -4149,6 +4201,20 @@
         }).join("");
     }
     html += analysisHTML(A);
+    var mp = midpoints(A, 1.5);
+    if (mp.length) {
+      html += "<h3>MIDPOINTS (±1.5°)</h3>" + mp.map(function (m) {
+        return "<div><span>" + m.p1.glyph + "/" + m.p2.glyph + " → " + m.hit.glyph + " " + m.hit.name +
+          "</span><span>" + m.orb.toFixed(1) + "°</span></div>";
+      }).join("");
+    }
+    var parts = arabicParts(A);
+    if (parts.length) {
+      html += "<h3>ARABIC PARTS (" + (parts[0].day ? "day" : "night") + " chart)</h3>" +
+        parts.map(function (p) {
+          return "<div><span>" + p.name + "</span><span>" + signName(p.lon) + "</span></div>";
+        }).join("");
+    }
     var fs = fixedStarContacts(A, 1.5);
     if (fs.length) {
       html += "<h3>FIXED-STAR CONTACTS (±1.5°)</h3>" + fs.map(function (C) {
@@ -7061,6 +7127,8 @@
     SKYOPTS: function () { return { transits: TRANSITS, solarReturn: SOLAR_RETURN, synastry: SYNASTRY, progressed: PROGRESSED }; },
     PATTERNS: function () { var A = computeChart(CHART); return aspectPatterns(A).map(function (p) { return p.type; }); },
     FIXED: function () { var A = computeChart(CHART); return fixedStarContacts(A, 1.5).map(function (c) { return c.planet + "/" + c.star; }); },
+    MIDPOINTS: function () { return midpoints(computeChart(CHART), 1.5).map(function (m) { return m.p1.id + "/" + m.p2.id + "->" + m.hit.id; }); },
+    PARTS: function () { return arabicParts(computeChart(CHART)).map(function (p) { return p.name + ":" + p.lon.toFixed(2); }); },
     NODES: function () { return { node: geoLon("node", sysJD()), chiron: geoLon("chiron", sysJD()) }; },
     TOPO: function () { return { on: TOPO, geo: geoLon("moon", sysJD()), topo: topoLon("moon", sysJD(), CHART.lat, CHART.lon) }; },
     TONIGHT_TEXT: function () { return tonightText(); },
