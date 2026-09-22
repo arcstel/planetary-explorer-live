@@ -180,6 +180,10 @@
   #skypos div,#skyasp div,#skycusps div{display:flex;justify-content:space-between;gap:8px;padding:2px 0;
     border-bottom:1px solid #101827;white-space:nowrap}
   #skypos .rg{color:#ff8f6b}
+  #skybody>div{display:flex;justify-content:space-between;gap:10px;padding:2px 0;
+    border-bottom:1px solid #101827;white-space:nowrap;overflow:hidden}
+  #skybody>div>span:first-child{color:#93a7c6;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+  #skybody>div>span:last-child{color:#dfe6ff;flex:0 0 auto;text-align:right}
   #moonrow{display:flex;align-items:center;gap:10px;margin-top:10px}
   #moontxt b{color:#dfe6ff}
   .sgrid{border-collapse:collapse;font-size:10.5px;margin-top:8px;width:100%}
@@ -616,6 +620,8 @@
       <input id="srton" type="checkbox" style="width:auto"></label>
     <label style="display:flex;align-items:center;justify-content:space-between">Progressions — age now
       <input id="prgon" type="checkbox" style="width:auto"></label>
+    <label style="display:flex;align-items:center;justify-content:space-between">Topocentric Moon
+      <input id="topon" type="checkbox" style="width:auto" checked></label>
     <label style="display:flex;align-items:center;justify-content:space-between">Synastry — two charts
       <input id="synon" type="checkbox" style="width:auto"></label>
     <div id="synb" style="display:none;border-top:1px solid #16202f;margin-top:6px;padding-top:8px">
@@ -3615,6 +3621,16 @@
     } else return null;
     return norm360(Math.atan2(B.y - A.y, B.x - A.x) / D2R + prec);
   }
+  // ---- topocentric correction (observer on the surface, not the geocentre) ----
+  // Most important for the Moon (about 1 degree of parallax). Uses the Moon's
+  // hour angle at the chart place so natal charts reflect the real local view.
+  function topoLon(id, jd, lat, lon) {
+    var geo = geoLon(id, jd);
+    if (geo == null || id !== "moon") return geo;
+    var M = moonGeom(jd), lst = lstDeg(jd, lon), H = (lst - M.ra) * D2R;
+    var dLon = -0.9456 * Math.cos(lat * D2R) * Math.cos(H);
+    return norm360(geo + dLon);
+  }
   function skyParts(lon) {
     var l = norm360(lon - ZOD_OFF);
     var sg = Math.floor(l / 30) % 12;
@@ -3765,7 +3781,7 @@
   }
   var CHART = { name: "Chart A", date: null, time: "12:00", tz: 0, lat: 51.5, lon: 0, house: "placidus" };
   var CHART2 = { name: "Person B", date: null, time: "12:00", tz: 0, lat: 51.5, lon: 0 };
-  var SYNASTRY = false, TRANSITS = false, SOLAR_RETURN = false, PROGRESSED = false;
+  var SYNASTRY = false, TRANSITS = false, SOLAR_RETURN = false, PROGRESSED = false, TOPO = true;
   // Solar return: the moment the Sun returns to its natal longitude, near the
   // birthday. Solved from the natal Sun longitude with a couple of Newton steps.
   function solarReturnJD(natalLon, jd0) {
@@ -3792,6 +3808,8 @@
     SKY_BODIES.forEach(function (b) {
       var lon = geoLon(b.id, jd);
       if (lon == null) return;
+      // Topocentric correction for the Moon when a place is known (natal charts).
+      if (b.id === "moon" && TOPO && c.lat != null) lon = topoLon("moon", jd, c.lat, c.lon);
       var spd = norm180(geoLon(b.id, jd + 0.5) - geoLon(b.id, jd - 0.5));
       pos.push({ b: b, lon: lon, retro: spd < 0, house: houseOf(hs.cusps, lon), p: skyParts(lon) });
     });
@@ -4013,6 +4031,39 @@
     });
     return pos;
   }
+  // ---- fixed-star contacts: major stars conjunct natal points ----
+  // Uses the bundled catalogue (stars.js / STARS_DEEP) and precesses each star
+  // to the chart date, then reports conjunctions within orb to the chart bodies.
+  var FIXED_MAJOR = ["Aldebaran", "Regulus", "Antares", "Fomalhaut", "Spica", "Arcturus",
+    "Sirius", "Vega", "Capella", "Rigel", "Procyon", "Betelgeuse", "Altair", "Deneb",
+    "Polaris", "Algol", "Alcyone", "Bellatrix", "Alnilam", "Canopus", "Achernar",
+    "Castor", "Pollux", "Denebola", "Alphard", "Scheat", "Markab", "Acrux", "Mimosa"];
+  function starLonOf(name, jd) {
+    var src = (window.STARS || []).concat(window.STARS_DEEP || []);
+    for (var i = 0; i < src.length; i++) {
+      if (src[i].n === name) {
+        var rd = precessRD(src[i].ra, src[i].dec, jd);
+        var e = obliquity(jd) * D2R, ra = rd.ra * D2R, de = rd.dec * D2R;
+        var lon = Math.atan2(Math.sin(ra) * Math.cos(e) + Math.tan(de) * Math.sin(e), Math.cos(ra));
+        return norm360(lon / D2R);
+      }
+    }
+    return null;
+  }
+  function fixedStarContacts(A, orb) {
+    orb = orb || 1.5;
+    var out = [];
+    FIXED_MAJOR.forEach(function (sn) {
+      var sl = starLonOf(sn, A.jd);
+      if (sl == null) return;
+      A.pos.forEach(function (P) {
+        var d = Math.abs(norm180(sl - P.lon));
+        if (d <= orb) out.push({ star: sn, planet: P.b.name, glyph: P.b.glyph, orb: d, lon: sl });
+      });
+    });
+    out.sort(function (x, y) { return x.orb - y.orb; });
+    return out;
+  }
   function gridTable(A, B) {
     var cols = B || A, html = "<table class='sgrid'><tr><th></th>";
     cols.forEach(function (P) { html += "<th>" + P.b.glyph + "</th>"; });
@@ -4098,6 +4149,13 @@
         }).join("");
     }
     html += analysisHTML(A);
+    var fs = fixedStarContacts(A, 1.5);
+    if (fs.length) {
+      html += "<h3>FIXED-STAR CONTACTS (±1.5°)</h3>" + fs.map(function (C) {
+        return "<div><span>" + C.glyph + " " + C.planet + " ↔ " + C.star + "</span><span>" +
+          C.orb.toFixed(1) + "°</span></div>";
+      }).join("");
+    }
     if (Bc) {
       var title = SYNASTRY ? "INTER-ASPECTS &nbsp;<span style='color:#61748e'>A ↔ B</span>"
         : (SOLAR_RETURN ? "SOLAR RETURN — " + A.pos.length + " planets vs natal" : "TRANSITS NOW vs natal");
@@ -6112,6 +6170,10 @@
       PROGRESSED = this.checked;
       if (SYS.view === "sky") drawSky();
     });
+    document.getElementById("topon").addEventListener("change", function () {
+      TOPO = this.checked;
+      if (SYS.view === "sky") drawSky();
+    });
     document.getElementById("bnow").addEventListener("click", function () {
       var d = new Date(SYS.dateUTC);
       CHART.date = isoDate(SYS.dateUTC);
@@ -6998,7 +7060,9 @@
     GOMODE: function (id) { switchMode(id); },
     SKYOPTS: function () { return { transits: TRANSITS, solarReturn: SOLAR_RETURN, synastry: SYNASTRY, progressed: PROGRESSED }; },
     PATTERNS: function () { var A = computeChart(CHART); return aspectPatterns(A).map(function (p) { return p.type; }); },
+    FIXED: function () { var A = computeChart(CHART); return fixedStarContacts(A, 1.5).map(function (c) { return c.planet + "/" + c.star; }); },
     NODES: function () { return { node: geoLon("node", sysJD()), chiron: geoLon("chiron", sysJD()) }; },
+    TOPO: function () { return { on: TOPO, geo: geoLon("moon", sysJD()), topo: topoLon("moon", sysJD(), CHART.lat, CHART.lon) }; },
     TONIGHT_TEXT: function () { return tonightText(); },
     LIST_TEXT: function () { return listText(); },
     MUSIC: function () { return { on: !!SET.music, playing: !!(MUSIC.el && !MUSIC.el.paused), vol: MUSIC.el ? MUSIC.el.volume : 0 }; },
