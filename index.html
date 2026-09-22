@@ -614,6 +614,8 @@
       <input id="trnon" type="checkbox" style="width:auto"></label>
     <label style="display:flex;align-items:center;justify-content:space-between">Solar return — this year
       <input id="srton" type="checkbox" style="width:auto"></label>
+    <label style="display:flex;align-items:center;justify-content:space-between">Progressions — age now
+      <input id="prgon" type="checkbox" style="width:auto"></label>
     <label style="display:flex;align-items:center;justify-content:space-between">Synastry — two charts
       <input id="synon" type="checkbox" style="width:auto"></label>
     <div id="synb" style="display:none;border-top:1px solid #16202f;margin-top:6px;padding-top:8px">
@@ -3542,8 +3544,41 @@
     { id: "saturn", glyph: "♄", name: "Saturn", color: "#d9c79a" },
     { id: "uranus", glyph: "♅", name: "Uranus", color: "#9fd8e8" },
     { id: "neptune", glyph: "♆", name: "Neptune", color: "#7b9bea" },
-    { id: "pluto", glyph: "♇", name: "Pluto", color: "#c0a898" }
+    { id: "pluto", glyph: "♇", name: "Pluto", color: "#c0a898" },
+    { id: "node", glyph: "☊", name: "True Node", color: "#b9c6e0" },
+    { id: "chiron", glyph: "⚷", name: "Chiron", color: "#c0b0d8" }
   ];
+  // Lunar nodes: the Moon's orbital node. Mean node is a steady retrograde;
+  // the "true" node oscillates around it. We use the mean node (widely used).
+  function nodeLon(jd) {
+    var d = jd - 2451545.0;
+    var om = 125.0445479 - 0.05295376 * d;   // mean longitude of ascending node
+    return norm360(om + precessionDeg(jd));
+  }
+  // Chiron — approximate Keplerian ellipse (public-domain osculating elements,
+  // J2000), good to a fraction of a degree near the present epoch.
+  var CHIRON_EL = { a: 13.6499, e: 0.3803, i: 6.9307, L: 209.3800,
+    varpi: 339.5380, node: 209.3800, n: 0.0195 };  // n = deg/day mean motion
+  function chironHelio(jd, v) {
+    var E = CHIRON_EL, d = jd - 2451545.0;
+    var M = norm360(E.L + E.n * d - E.varpi);
+    var e = E.e, Mr = M * D2R, Ei = Mr + e * Math.sin(Mr), i;
+    for (i = 0; i < 8; i++) Ei = Ei - (Ei - e * Math.sin(Ei) - Mr) / (1 - e * Math.cos(Ei));
+    var xv = E.a * (Math.cos(Ei) - e), yv = E.a * Math.sqrt(1 - e * e) * Math.sin(Ei);
+    var vv = Math.atan2(yv, xv), rr = Math.sqrt(xv * xv + yv * yv);
+    var w = (E.varpi - E.node) * D2R, N = E.node * D2R, Ir = E.i * D2R;
+    var u = vv + w;
+    return v.set(rr * (Math.cos(N) * Math.cos(u) - Math.sin(N) * Math.sin(u) * Math.cos(Ir)),
+                 rr * (Math.sin(N) * Math.cos(u) + Math.cos(N) * Math.sin(u) * Math.cos(Ir)),
+                 rr * (Math.sin(u) * Math.sin(Ir)));
+  }
+  function chironGeo(jd) {
+    if (!skyTemps.a) { skyTemps.a = new THREE.Vector3(); skyTemps.b = new THREE.Vector3(); }
+    var A = skyTemps.a, B = skyTemps.b;
+    planetHelio("earth", jd, A);
+    chironHelio(jd, B);
+    return B.set(B.x - A.x, B.y - A.y, B.z - A.z);
+  }
   var SIGNS = [["Aries","♈"],["Taurus","♉"],["Gemini","♊"],["Cancer","♋"],["Leo","♌"],
     ["Virgo","♍"],["Libra","♎"],["Scorpio","♏"],["Sagittarius","♐"],["Capricorn","♑"],
     ["Aquarius","♒"],["Pisces","♓"]];
@@ -3567,6 +3602,8 @@
     var A = skyTemps.a, B = skyTemps.b;
     if (id === "sun") { planetHelio("earth", jd, A); return norm360(Math.atan2(-A.y, -A.x) / D2R + prec); }
     if (id === "moon") { moonGeo(jd, A); return norm360(Math.atan2(A.y, A.x) / D2R + prec); }
+    if (id === "node") return nodeLon(jd);
+    if (id === "chiron") { chironGeo(jd); return norm360(Math.atan2(B.y, B.x) / D2R + prec); }
     planetHelio("earth", jd, A);
     if (PLAN_EL[id]) planetHelio(id, jd, B);
     else if (window.SYS_EPH && SYS_EPH.bodies[id]) {
@@ -3728,7 +3765,7 @@
   }
   var CHART = { name: "Chart A", date: null, time: "12:00", tz: 0, lat: 51.5, lon: 0, house: "placidus" };
   var CHART2 = { name: "Person B", date: null, time: "12:00", tz: 0, lat: 51.5, lon: 0 };
-  var SYNASTRY = false, TRANSITS = false, SOLAR_RETURN = false;
+  var SYNASTRY = false, TRANSITS = false, SOLAR_RETURN = false, PROGRESSED = false;
   // Solar return: the moment the Sun returns to its natal longitude, near the
   // birthday. Solved from the natal Sun longitude with a couple of Newton steps.
   function solarReturnJD(natalLon, jd0) {
@@ -3884,6 +3921,98 @@
       (dign.length ? dign.map(function (x) { return "<div><span>" + x + "</span></div>"; }).join("")
         : "<div><span>No planet in domicile, exaltation, fall or detriment.</span></div>");
   }
+  // ---- aspect patterns: Grand Trine, T-Square, Grand Cross, Yod ----
+  var PATTERN_BODIES = ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn",
+    "uranus", "neptune", "pluto"];
+  function aspectPatterns(A) {
+    var byId = {};
+    A.pos.forEach(function (P) { byId[P.b.id] = P; });
+    var list = PATTERN_BODIES.map(function (id) { return byId[id]; }).filter(Boolean);
+    var ang = function (a, b) { return angDiff(a.lon, b.lon); };
+    var near = function (a, b, t, orb) { return Math.abs(ang(a, b) - t) <= orb; };
+    var found = [], used = {};
+    function key(names) { return names.slice().sort().join("|"); }
+    var i, j, k, l;
+    // Grand Trine (three bodies ~120 apart), Grand Cross (two oppositions + squares)
+    for (i = 0; i < list.length; i++) for (j = i + 1; j < list.length; j++) for (k = j + 1; k < list.length; k++) {
+      var a = list[i], b = list[j], c = list[k];
+      if (near(a, b, 120, 8) && near(b, c, 120, 8) && near(a, c, 120, 8)) {
+        var kk = "trine:" + key([a.b.id, b.b.id, c.b.id]);
+        if (!used[kk]) { used[kk] = 1; found.push({ type: "Grand Trine", el: [a, b, c] }); }
+      }
+    }
+    for (i = 0; i < list.length; i++) for (j = 0; j < list.length; j++) for (k = 0; k < list.length; k++) {
+      if (i === j || j === k || i === k) continue;
+      var a2 = list[i], b2 = list[j], c2 = list[k];
+      if (near(a2, b2, 180, 8) && near(a2, c2, 90, 8) && near(b2, c2, 90, 8)) {
+        var kk2 = "tsq:" + key([a2.b.id, b2.b.id, c2.b.id]);
+        if (!used[kk2]) { used[kk2] = 1; found.push({ type: "T-Square", el: [a2, b2, c2] }); }
+      }
+    }
+    for (i = 0; i < list.length; i++) for (j = i + 1; j < list.length; j++) for (k = j + 1; k < list.length; k++) for (l = k + 1; l < list.length; l++) {
+      var q = [list[i], list[j], list[k], list[l]];
+      var opp = 0, sq = 0;
+      for (var x = 0; x < 4; x++) for (var y = x + 1; y < 4; y++) {
+        if (near(q[x], q[y], 180, 8)) opp++;
+        if (near(q[x], q[y], 90, 8)) sq++;
+      }
+      if (opp === 2 && sq >= 4) {
+        var kk3 = "gcx:" + key(q.map(function (p) { return p.b.id; }));
+        if (!used[kk3]) { used[kk3] = 1; found.push({ type: "Grand Cross", el: q }); }
+      }
+    }
+    // Yod: two bodies sextile, both quincunx (150) a third
+    for (i = 0; i < list.length; i++) for (j = 0; j < list.length; j++) for (k = 0; k < list.length; k++) {
+      if (i === j || j === k || i === k) continue;
+      var y1 = list[i], y2 = list[j], ap = list[k];
+      if (near(y1, y2, 60, 6) && near(y1, ap, 150, 4) && near(y2, ap, 150, 4)) {
+        var kk4 = "yod:" + key([y1.b.id, y2.b.id, ap.b.id]);
+        if (!used[kk4]) { used[kk4] = 1; found.push({ type: "Yod", el: [y1, y2, ap] }); }
+      }
+    }
+    return found;
+  }
+  // ---- retrograde stations: when a body changes direction within ±N days ----
+  function stations(A, days) {
+    var out = [];
+    PATTERN_BODIES.forEach(function (id) {
+      var cur = geoLon(id, A.jd);
+      if (cur == null) return;
+      var prev = geoLon(id, A.jd - 0.5), next = geoLon(id, A.jd + 0.5);
+      var dirNow = norm180(next - prev) >= 0;
+      for (var t = 1; t <= days; t += 0.5) {
+        var a = geoLon(id, A.jd + t - 0.5), b = geoLon(id, A.jd + t);
+        if (a == null || b == null) continue;
+        var d0 = norm180(b - a) >= 0;
+        if (d0 !== dirNow) {
+          out.push({ id: id, jd: A.jd + t, toRetro: !d0, name: bodyName(id) });
+          break;
+        }
+      }
+    });
+    return out;
+  }
+  function bodyName(id) {
+    var n = id;
+    SKY_BODIES.forEach(function (b) { if (b.id === id) n = b.name; });
+    return n;
+  }
+  // ---- secondary progressions: one day after birth = one year of life ----
+  function progressedChart(A, targetJD) {
+    var ageYears = (targetJD - A.jd) / 365.2425;
+    var pjd = A.jd + ageYears;      // 1 day per year
+    return { jd: pjd, age: ageYears, pos: skyPositions(pjd) };
+  }
+  function skyPositions(jd) {
+    var pos = [];
+    SKY_BODIES.forEach(function (b) {
+      var lon = geoLon(b.id, jd);
+      if (lon == null) return;
+      var spd = norm180(geoLon(b.id, jd + 0.5) - geoLon(b.id, jd - 0.5));
+      pos.push({ b: b, lon: lon, retro: spd < 0 });
+    });
+    return pos;
+  }
   function gridTable(A, B) {
     var cols = B || A, html = "<table class='sgrid'><tr><th></th>";
     cols.forEach(function (P) { html += "<th>" + P.b.glyph + "</th>"; });
@@ -3937,6 +4066,37 @@
     html += "<h3>HOUSES (" + (CHART.house || "placidus") + ")</h3>" + cuspRows(A.hs);
     html += "<h3>" + (CHART.name || "A") + " — ASPECTS</h3>" + aspRows(intra);
     html += "<h3>ASPECT GRID</h3>" + gridTable(A.pos);
+    var pats = aspectPatterns(A);
+    if (pats.length) {
+      html += "<h3>ASPECT PATTERNS</h3>" + pats.map(function (p) {
+        return "<div><span>" + p.type + "</span><span>" +
+          p.el.map(function (P) { return P.b.glyph; }).join(" ") + "</span></div>";
+      }).join("");
+    }
+    var st = stations(A, 30);
+    if (st.length) {
+      html += "<h3>RETROGRADE STATIONS (next 30 days)</h3>" + st.map(function (s) {
+        var d = new Date((s.jd - 2440587.5) * 86400000);
+        return "<div><span>" + s.name + " turns " + (s.toRetro ? "retrograde ℞" : "direct") +
+          "</span><span>" + fmtDate(d.getTime()).slice(0, 6) + "</span></div>";
+      }).join("");
+    }
+    if (PROGRESSED) {
+      var pr = progressedChart(A, sysJD());
+      var diffs = [];
+      pr.pos.forEach(function (P) {
+        var natal = null;
+        A.pos.forEach(function (Q) { if (Q.b.id === P.b.id) natal = Q; });
+        if (natal) diffs.push({ b: P.b, natal: natal.lon, now: P.lon,
+          moved: norm180(P.lon - natal) });
+      });
+      html += "<h3>PROGRESSIONS (age " + pr.age.toFixed(1) + " — secondary)</h3>" +
+        diffs.map(function (x) {
+          return "<div><span>" + x.b.glyph + " " + x.b.name + "</span><span>" +
+            signName(x.now).replace(/^\d+°/, Math.floor(x.now % 30) + "°") +
+            " (" + (x.moved >= 0 ? "+" : "") + x.moved.toFixed(1) + "°)</span></div>";
+        }).join("");
+    }
     html += analysisHTML(A);
     if (Bc) {
       var title = SYNASTRY ? "INTER-ASPECTS &nbsp;<span style='color:#61748e'>A ↔ B</span>"
@@ -5948,6 +6108,10 @@
       if (SOLAR_RETURN) { TRANSITS = false; document.getElementById("trnon").checked = false; }
       if (SYS.view === "sky") drawSky();
     });
+    document.getElementById("prgon").addEventListener("change", function () {
+      PROGRESSED = this.checked;
+      if (SYS.view === "sky") drawSky();
+    });
     document.getElementById("bnow").addEventListener("click", function () {
       var d = new Date(SYS.dateUTC);
       CHART.date = isoDate(SYS.dateUTC);
@@ -6832,7 +6996,9 @@
     ARSTATE: function () { return { active: AR.active, hasOri: AR.hasOri, camErr: AR.camErr, yaw: AR.yaw, pitch: AR.pitch, arFov: SET.arFov, arHead: SET.arHead }; },
     MODES: function () { return MODES.map(function (m) { return m.id; }); },
     GOMODE: function (id) { switchMode(id); },
-    SKYOPTS: function () { return { transits: TRANSITS, solarReturn: SOLAR_RETURN, synastry: SYNASTRY }; },
+    SKYOPTS: function () { return { transits: TRANSITS, solarReturn: SOLAR_RETURN, synastry: SYNASTRY, progressed: PROGRESSED }; },
+    PATTERNS: function () { var A = computeChart(CHART); return aspectPatterns(A).map(function (p) { return p.type; }); },
+    NODES: function () { return { node: geoLon("node", sysJD()), chiron: geoLon("chiron", sysJD()) }; },
     TONIGHT_TEXT: function () { return tonightText(); },
     LIST_TEXT: function () { return listText(); },
     MUSIC: function () { return { on: !!SET.music, playing: !!(MUSIC.el && !MUSIC.el.paused), vol: MUSIC.el ? MUSIC.el.volume : 0 }; },
